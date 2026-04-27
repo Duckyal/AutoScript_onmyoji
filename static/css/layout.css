@@ -1,0 +1,94 @@
+/**
+ * 布局样式
+ * 定义整体页面结构
+ */
+
+/* 主容器 - 使用 Flexbox 布局 */
+.main-container {
+  display: flex;
+  height: calc(100vh - var(--header-height));
+  overflow: hidden;
+}
+
+/* 右侧内容包装器 */
+.content-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* 上方 2/3 区域 */
+.content-upper {
+  display: flex;
+  flex: 2;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 内容主区域 */
+.content-main {
+  flex: 1;
+  padding: var(--spacing-6);
+  background-color: var(--color-bg-content);
+  overflow-y: auto;
+  min-width: 0;
+}
+
+/* ==================== 响应式 - 手机竖屏 ==================== */
+@media (max-width: 480px) {
+  .main-container {
+    flex-direction: column;
+    height: calc(100vh - 48px);
+  }
+  
+  .content-upper {
+    flex-direction: column;
+    flex: 1;
+  }
+  
+  .content-main {
+    padding: var(--spacing-4);
+  }
+}
+
+/* ==================== 响应式 - 平板 ==================== */
+@media (min-width: 481px) and (max-width: 768px) {
+  .main-container {
+    flex-direction: column;
+  }
+  
+  .content-upper {
+    flex-direction: row;
+    flex: 1;
+  }
+  
+  .content-main {
+    padding: var(--spacing-4);
+  }
+}
+
+/* ==================== 手机横屏 ==================== */
+@media (max-height: 500px) and (orientation: landscape) {
+  .main-container {
+    flex-direction: row;
+    height: calc(100vh - 48px);
+  }
+  
+  .content-wrapper {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .content-upper {
+    flex-direction: row;
+    flex: 1;
+  }
+  
+  .content-main {
+    flex: 1;
+    padding: var(--spacing-3);
+    overflow-y: auto;
+  }
+}

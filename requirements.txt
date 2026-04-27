@@ -1,0 +1,24 @@
+# pip install -r ./module/requirements.txt
+
+# OCR字符识别 (module/adb.py)
+rapidocr-onnxruntime
+
+# Android自动化测试框架 (module/adb.py)
+uiautomator2
+
+# 图像处理库 (module/adb.py, module/decorators.py)
+opencv-python
+
+# 数值计算库 (module/adb.py, module/decorators.py - 贝塞尔轨迹计算)
+numpy
+
+# 后端
+fastapi
+jinja2
+starlette<0.36
+
+# 前端
+uvicorn
+
+# FastAPI 处理 FormData 需要一个额外的依赖库
+python-multipart

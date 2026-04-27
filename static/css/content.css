@@ -1,0 +1,69 @@
+/**
+ * 内容区域样式
+ * 任务配置面板
+ */
+
+/* 任务面板 */
+.task-panel {
+  max-width: 500px;
+}
+
+/* 面板标题 */
+.task-panel__title {
+  margin-bottom: var(--spacing-6);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+/* 面板文本 */
+.task-panel__text {
+  margin-bottom: var(--spacing-4);
+  font-size: var(--font-size-base);
+  color: var(--color-text-secondary);
+}
+
+/* 文件夹路径显示 */
+.task-panel__folder-path {
+  margin-top: var(--spacing-4);
+  padding: var(--spacing-3);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  background-color: var(--color-bg-card);
+  border-radius: var(--radius-md);
+  word-break: break-all;
+}
+
+.task-panel__folder-path:empty {
+  display: none;
+}
+
+/* ==================== 响应式 - 手机竖屏 ==================== */
+@media (max-width: 480px) {
+  .task-panel {
+    max-width: none;
+  }
+  
+  .task-panel__title {
+    margin-bottom: var(--spacing-4);
+    font-size: var(--font-size-lg);
+  }
+  
+  .task-panel__text {
+    font-size: var(--font-size-sm);
+  }
+}
+
+/* ==================== 手机横屏 ==================== */
+@media (max-height: 500px) and (orientation: landscape) {
+  .task-panel__title {
+    margin-bottom: var(--spacing-3);
+    font-size: var(--font-size-base);
+  }
+  
+  .task-panel__text {
+    margin-bottom: var(--spacing-2);
+    font-size: var(--font-size-sm);
+  }
+}

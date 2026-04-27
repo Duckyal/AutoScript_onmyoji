@@ -1,0 +1,162 @@
+/**
+ * 表单元素样式
+ * 输入框、选择框、按钮等
+ */
+
+/* 表单组 */
+.form-group {
+  margin-bottom: var(--spacing-5);
+}
+
+/* 标签 */
+.form-label {
+  display: block;
+  margin-bottom: var(--spacing-2);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+
+/* 输入框 */
+.form-input {
+  width: 100%;
+  padding: var(--spacing-3) var(--spacing-4);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  outline: none;
+  transition: all var(--transition-fast);
+}
+
+.form-input:hover {
+  border-color: var(--color-border-light);
+}
+
+.form-input:focus {
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 2px var(--color-primary-light);
+}
+
+.form-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+/* 选择框 */
+.form-select {
+  width: 100%;
+  padding: var(--spacing-3) var(--spacing-4);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  outline: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--spacing-3) center;
+  padding-right: var(--spacing-8);
+}
+
+.form-select:hover {
+  border-color: var(--color-border-light);
+}
+
+.form-select:focus {
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 2px var(--color-primary-light);
+}
+
+/* 选择框选项 */
+.form-select option {
+  background-color: var(--color-bg-sidebar);
+  color: var(--color-text-primary);
+}
+
+/* 按钮基础样式 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3) var(--spacing-5);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+/* 主要按钮 */
+.btn--primary {
+  color: var(--color-text-primary);
+  background-color: var(--color-primary);
+  border: none;
+}
+
+.btn--primary:hover {
+  background-color: var(--color-primary-hover);
+}
+
+/* 次要按钮 */
+.btn--secondary {
+  color: var(--color-text-primary);
+  background-color: transparent;
+  border: 1px solid var(--color-border);
+}
+
+.btn--secondary:hover {
+  background-color: var(--color-hover);
+  border-color: var(--color-border-light);
+}
+
+/* 禁用状态 */
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==================== 响应式 - 手机竖屏 ==================== */
+@media (max-width: 480px) {
+  .form-group {
+    margin-bottom: var(--spacing-4);
+  }
+  
+  .form-input,
+  .form-select {
+    padding: var(--spacing-2) var(--spacing-3);
+    font-size: var(--font-size-base);
+  }
+  
+  .btn {
+    padding: var(--spacing-2) var(--spacing-4);
+    width: 100%;
+  }
+}
+
+/* ==================== 手机横屏 ==================== */
+@media (max-height: 500px) and (orientation: landscape) {
+  .form-group {
+    margin-bottom: var(--spacing-3);
+  }
+  
+  .form-label {
+    font-size: var(--font-size-xs);
+    margin-bottom: var(--spacing-1);
+  }
+  
+  .form-input,
+  .form-select {
+    padding: var(--spacing-2);
+    font-size: var(--font-size-xs);
+  }
+  
+  .btn {
+    padding: var(--spacing-2) var(--spacing-3);
+    font-size: var(--font-size-xs);
+  }
+}

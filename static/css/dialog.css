@@ -1,0 +1,125 @@
+/**
+ * 对话框样式
+ * 弹出窗口和模态框
+ */
+
+/* 遮罩层 */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.6);
+  z-index: 1000;
+  animation: fadeIn var(--transition-fast);
+}
+
+/* 对话框容器 */
+.dialog {
+  width: 100%;
+  max-width: 400px;
+  margin: var(--spacing-4);
+  background-color: var(--color-bg-sidebar);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-dialog);
+  animation: slideIn var(--transition-normal);
+}
+
+/* 对话框头部 */
+.dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-4) var(--spacing-6);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dialog__title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.dialog__close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  font-size: var(--font-size-xl);
+  color: var(--color-text-muted);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.dialog__close-btn:hover {
+  color: var(--color-text-primary);
+  background-color: var(--color-hover);
+}
+
+/* 对话框主体 */
+.dialog__body {
+  padding: var(--spacing-6);
+}
+
+/* 对话框底部 */
+.dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-3);
+  padding: var(--spacing-4) var(--spacing-6);
+  border-top: 1px solid var(--color-border);
+}
+
+/* 动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* ==================== 响应式 - 手机 ==================== */
+@media (max-width: 480px) {
+  .dialog {
+    max-width: none;
+    margin: var(--spacing-3);
+    border-radius: var(--radius-lg);
+  }
+  
+  .dialog__header {
+    padding: var(--spacing-3) var(--spacing-4);
+  }
+  
+  .dialog__title {
+    font-size: var(--font-size-base);
+  }
+  
+  .dialog__body {
+    padding: var(--spacing-4);
+  }
+  
+  .dialog__footer {
+    padding: var(--spacing-3) var(--spacing-4);
+    flex-direction: column;
+  }
+  
+  .dialog__footer .btn {
+    width: 100%;
+  }
+}

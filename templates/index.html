@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoScript_onmyoji</title>
+  <!-- 网页图标 -->
+  <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+  <!-- CSS 文件 -->
+  <link rel="stylesheet" href="/static/css/variables.css">
+  <link rel="stylesheet" href="/static/css/reset.css">
+  <link rel="stylesheet" href="/static/css/layout.css">
+  <link rel="stylesheet" href="/static/css/header.css">
+  <link rel="stylesheet" href="/static/css/sidebar-process.css">
+  <link rel="stylesheet" href="/static/css/sidebar-task.css">
+  <link rel="stylesheet" href="/static/css/content.css">
+  <link rel="stylesheet" href="/static/css/terminal.css">
+  <link rel="stylesheet" href="/static/css/dialog.css">
+  <link rel="stylesheet" href="/static/css/form.css">
+</head>
+<body>
+  <!-- 顶部标题栏 -->
+  <header class="header">
+    <h1 class="header__title">
+      <span class="header__title-main">AutoScript_onmyoji</span>
+      <span class="header__title-separator" id="titleSeparator" style="display: none;"> &gt; </span>
+      <span class="header__title-process" id="titleProcess"></span>
+    </h1>
+    <button class="header__start-btn" id="startBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+        <polygon points="5,3 19,12 5,21"></polygon>
+      </svg>
+      启动
+    </button>
+  </header>
+
+  <!-- 主容器 -->
+  <div class="main-container">
+    <!-- 左侧进程侧边栏 -->
+    <aside class="sidebar-process">
+      <div class="sidebar-process__header">
+        <h2 class="sidebar-process__title">脚本进程</h2>
+        <button class="sidebar-process__add-btn" id="addProcessBtn" title="添加进程">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+      </div>
+      <ul class="sidebar-process__list" id="processList">
+        <!-- 进程列表项由 JavaScript 动态生成 -->
+      </ul>
+    </aside>
+
+    <!-- 右侧内容区域 -->
+    <div class="content-wrapper">
+      <!-- 上方 2/3：任务侧边栏和内容 -->
+      <div class="content-upper">
+        <!-- 任务侧边栏 -->
+        <aside class="sidebar-task">
+          <h2 class="sidebar-task__title">任务</h2>
+          <ul class="sidebar-task__list" id="taskList">
+            <li class="sidebar-task__item active" data-task="yuhun">御魂</li>
+            <li class="sidebar-task__item" data-task="douji">斗技</li>
+            <li class="sidebar-task__item" data-task="tupo">突破</li>
+            <li class="sidebar-task__item" data-task="custom">自定义</li>
+          </ul>
+        </aside>
+
+        <!-- 任务内容区域 -->
+        <main class="content-main" id="contentMain">
+          <!-- 御魂配置 -->
+          <div class="task-panel" id="panel-yuhun">
+            <h3 class="task-panel__title">御魂配置</h3>
+            <div class="form-group">
+              <label class="form-label" for="yuhun-layer">挑战层数</label>
+              <select class="form-select" id="yuhun-layer">
+                <option value="10">魂十</option>
+                <option value="11">魂十一</option>
+                <option value="12">魂十二</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="yuhun-count">挑战次数</label>
+              <input class="form-input" type="number" id="yuhun-count" value="100" min="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="yuhun-team">组队模式</label>
+              <select class="form-select" id="yuhun-team">
+                <option value="solo">单人</option>
+                <option value="leader">队长</option>
+                <option value="member">队员</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="yuhun-shikigami">式神选择</label>
+              <input class="form-input" type="text" id="yuhun-shikigami" placeholder="输入式神名称">
+            </div>
+          </div>
+
+          <!-- 斗技配置 -->
+          <div class="task-panel" id="panel-douji" style="display: none;">
+            <h3 class="task-panel__title">斗技配置</h3>
+            <div class="form-group">
+              <label class="form-label" for="douji-count">挑战次数</label>
+              <input class="form-input" type="number" id="douji-count" value="30" min="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="douji-rank">目标段位</label>
+              <select class="form-select" id="douji-rank">
+                <option value="none">不限</option>
+                <option value="gold">黄金</option>
+                <option value="platinum">白金</option>
+                <option value="diamond">钻石</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="douji-refresh">刷新对手</label>
+              <select class="form-select" id="douji-refresh">
+                <option value="auto">自动</option>
+                <option value="manual">手动</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 突破配置 -->
+          <div class="task-panel" id="panel-tupo" style="display: none;">
+            <h3 class="task-panel__title">突破配置</h3>
+            <div class="form-group">
+              <label class="form-label" for="tupo-type">突破类型</label>
+              <select class="form-select" id="tupo-type">
+                <option value="personal">个人突破</option>
+                <option value="realm">阴界之门</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="tupo-count">突破次数</label>
+              <input class="form-input" type="number" id="tupo-count" value="30" min="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="tupo-target">目标等级</label>
+              <select class="form-select" id="tupo-target">
+                <option value="any">任意</option>
+                <option value="low">低等级优先</option>
+                <option value="high">高等级优先</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="tupo-refresh">自动刷新</label>
+              <select class="form-select" id="tupo-refresh">
+                <option value="yes">是</option>
+                <option value="no">否</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 自定义配置 -->
+          <div class="task-panel" id="panel-custom" style="display: none;">
+            <h3 class="task-panel__title">自定义脚本</h3>
+            <p class="task-panel__text">请选择文件夹</p>
+            <button class="btn btn--primary" id="selectFileBtn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              </svg>
+              打开资源文件夹
+            </button>
+            <p class="task-panel__folder-path" id="fileName"></p>
+          </div>
+        </main>
+      </div>
+
+      <!-- 下方 1/3：终端界面 -->
+      <div class="terminal">
+        <div class="terminal__header">
+          <span class="terminal__title">输出日志</span>
+          <button class="terminal__clear-btn" id="clearTerminalBtn" title="清空日志">清空</button>
+        </div>
+        <div class="terminal__body" id="terminalBody">
+          <div class="terminal__line">[2024-01-15 10:30:00] 系统就绪，等待任务...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 添加进程对话框 -->
+  <div class="dialog-overlay" id="addProcessDialog" style="display: none;">
+    <div class="dialog">
+      <div class="dialog__header">
+        <h3 class="dialog__title">添加进程</h3>
+        <button class="dialog__close-btn" id="closeAddDialogBtn">&times;</button>
+      </div>
+      <div class="dialog__body">
+        <div class="form-group">
+          <label class="form-label" for="newProcessName">进程名称</label>
+          <input class="form-input" type="text" id="newProcessName" placeholder="输入进程名称">
+        </div>
+      </div>
+      <div class="dialog__footer">
+        <button class="btn btn--secondary" id="cancelAddBtn">取消</button>
+        <button class="btn btn--primary" id="confirmAddBtn">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 重命名进程对话框 -->
+  <div class="dialog-overlay" id="renameProcessDialog" style="display: none;">
+    <div class="dialog">
+      <div class="dialog__header">
+        <h3 class="dialog__title">重命名进程</h3>
+        <button class="dialog__close-btn" id="closeRenameDialogBtn">&times;</button>
+      </div>
+      <div class="dialog__body">
+        <div class="form-group">
+          <label class="form-label" for="renameProcessName">新名称</label>
+          <input class="form-input" type="text" id="renameProcessName" placeholder="输入新名称">
+        </div>
+      </div>
+      <div class="dialog__footer">
+        <button class="btn btn--secondary" id="cancelRenameBtn">取消</button>
+        <button class="btn btn--primary" id="confirmRenameBtn">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript 文件 -->
+  <script src="/static/js/state.js"></script>
+  <script src="/static/js/process.js"></script>
+  <script src="/static/js/task.js"></script>
+  <script src="/static/js/terminal.js"></script>
+  <script src="/static/js/dialog.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

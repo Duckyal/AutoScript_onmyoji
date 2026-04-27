@@ -1,0 +1,1 @@
+# AutoScript_onmyoji

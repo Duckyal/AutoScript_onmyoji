@@ -1,0 +1,144 @@
+/**
+ * 顶部标题栏样式
+ */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--header-height);
+  padding: 0 var(--spacing-4);
+  background-color: var(--color-bg-sidebar);
+  border-bottom: 1px solid var(--color-border);
+  gap: var(--spacing-4);
+}
+
+/* 左侧区域 */
+.header__left {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 右侧区域 */
+.header__right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* 标题 */
+.header__title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.header__title-main {
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+.header__title-separator {
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-normal);
+  flex-shrink: 0;
+}
+
+.header__title-process {
+  color: var(--color-primary);
+  font-weight: var(--font-weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 启动按钮 */
+.header__start-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-4);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: #ffffff;
+  background-color: #22c55e;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.header__start-btn:hover {
+  background-color: #16a34a;
+}
+
+.header__start-btn:active {
+  transform: scale(0.98);
+}
+
+.header__start-btn svg {
+  flex-shrink: 0;
+}
+
+/* ==================== 响应式 - 手机 ==================== */
+@media (max-width: 480px) {
+  .header {
+    padding: 0 var(--spacing-3);
+    height: 48px;
+  }
+  
+  .header__title {
+    font-size: var(--font-size-base);
+  }
+  
+  .header__title-main {
+    display: none;
+  }
+  
+  .header__title-separator {
+    display: none !important;
+  }
+  
+  .header__title-process {
+    font-size: var(--font-size-base);
+  }
+  
+  /* 手机上只显示当前进程名，如果没有则显示简称 */
+  .header__title::before {
+    content: "AutoScript";
+    color: var(--color-text-primary);
+    font-weight: var(--font-weight-semibold);
+  }
+  
+  .header__title:has(.header__title-process:not(:empty))::before {
+    display: none;
+  }
+  
+  .header__start-btn {
+    padding: var(--spacing-2);
+  }
+  
+  .header__start-btn-text {
+    display: none;
+  }
+}
+
+/* 平板适配 */
+@media (min-width: 481px) and (max-width: 768px) {
+  .header {
+    padding: 0 var(--spacing-4);
+  }
+  
+  .header__title {
+    font-size: var(--font-size-base);
+  }
+}
