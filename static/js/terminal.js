@@ -178,7 +178,11 @@ const TerminalManager = {
    * 连接 WebSocket 接收 FastAPI 日志
    * @param {string} url WebSocket URL
    */
-  connectWebSocket(url = 'ws://localhost:8000/logs') {
+  connectWebSocket() {
+    // 使日志也能能通过ip传输
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;  // 包含 IP + 端口，如 192.168.1.100:5173
+    const url = `${protocol}//${host}/logs`;
     // 防止页面还没加载完就疯狂重连
     if (this.isConnecting) return; 
     this.isConnecting = true;

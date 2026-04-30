@@ -1,5 +1,5 @@
 import uiautomator2 as u2
-from rapidocr_onnxruntime import RapidOCR
+from rapidocr import RapidOCR
 from module.decorators import *
 from module.log import log
 
@@ -319,7 +319,7 @@ class ADB:
         target_txt:目标文本（如果不提供则返回所有文本框信息）
         '''
         img_path = self.获取截图对象(x1, y1, x2, y2)
-        result_list, elapse = self.engine(img_path, use_det=True, use_cls=True, use_rec=True)
+        result_list = self.engine(img_path, use_det=True, use_cls=True, use_rec=True)
         try:
             result_dict = {}
             for i in result_list:

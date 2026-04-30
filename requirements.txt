@@ -1,7 +1,8 @@
 # pip install -r ./module/requirements.txt
 
 # OCR字符识别 (module/adb.py)
-rapidocr-onnxruntime
+onnxruntime
+rapidocr
 
 # Android自动化测试框架 (module/adb.py)
 uiautomator2

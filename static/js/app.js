@@ -58,9 +58,19 @@ const App = {
     const taskName = AppState.getCurrentTask();
     const taskConfig = TaskManager.getCurrentConfig();
     
+    // 修正：显式提取 .value
+    const baseDeviceEl = document.getElementById("base-device");
+    const baseModeEl = document.getElementById("base-mode");
+
+    const baseConfig = {
+      "device": baseDeviceEl ? baseDeviceEl.value : null,
+      "mode": baseModeEl ? baseModeEl.value : null
+    };
+    
     return {
       process: currentProcess?.name,
       task: taskName,
+      base: baseConfig,
       config: taskConfig
     };
   },
@@ -72,6 +82,7 @@ const App = {
     const config = this.getCurrentConfig();
     TerminalManager.addLog(`启动任务: ${TaskManager.taskNames[config.task]}`, 'info');
     let response;
+    console.log("准备发送的完整配置对象:", config)
 
     // 调用 FastAPI
     try {

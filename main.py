@@ -60,10 +60,11 @@ async def run_task(request: Request):
         with open(file_path, "wb") as f:
             shutil.copyfileobj(py_file.file, f)
         log(f'收到自定义脚本: {py_file.filename}，进程: {process}')
-        custom.run(file_path)
+        custom.run(py_file.filename)
     # 执行预制任务
     else:
         data = await request.json()
+        log(data)
 
         task_name = data.get("taskName")
         config    = data.get("config", {})

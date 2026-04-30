@@ -1,12 +1,12 @@
 import asyncio
 from module.log import log
 
-async def run_script(file_path: str):
+async def run_script(file_name: str):
     """执行用户的 .py 脚本，把脚本的 print 输出推送到前端"""
-    log(f"===== 开始执行 {file_path} =====", "info")
+    log(f"===== 开始执行 {file_name} =====", "info")
 
     process = await asyncio.create_subprocess_exec(
-        "python", file_path,
+        "python", "-m", f"tmp.{file_name}",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
@@ -30,6 +30,6 @@ async def run_script(file_path: str):
     await process.wait()
     log(f"===== 脚本执行完毕 =====", "info")
 
-def run(file_path):
+def run(file_name):
     """给外部调用的同步入口"""
-    asyncio.create_task(run_script(file_path))
+    asyncio.create_task(run_script(file_name))

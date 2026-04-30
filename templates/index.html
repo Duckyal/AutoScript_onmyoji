@@ -69,6 +69,22 @@
 
         <!-- 任务内容区域 -->
         <main class="content-main" id="contentMain">
+          <!-- 基础配置 -->
+          
+          <h3 class="task-panel__title">基础配置</h3>
+          <div class="form-group">
+            <label class="form-label" for="base-device">ADB设备</label>
+            <input class="form-input" type="text" id="base-device" placeholder="输入设备无线调试ip和端口">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="base-mode">日志模式</label>
+            <select class="form-select" id="base-mode">
+              <option value="less">更少</option>
+              <option value="more">更多</option>
+            </select>
+          </div>
+          <hr><hr><br>
+
           <!-- 御魂配置 -->
           <div class="task-panel" id="panel-yuhun">
             <h3 class="task-panel__title">御魂配置</h3>
@@ -228,6 +244,6 @@
   <script src="/static/js/task.js"></script>
   <script src="/static/js/terminal.js"></script>
   <script src="/static/js/dialog.js"></script>
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/app.js?"></script>
 </body>
 </html>
