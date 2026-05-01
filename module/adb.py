@@ -12,37 +12,62 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 class ADB:
-    adb_path = os.path.dirname(__file__)   #取文件所在文件夹绝对路径
-    # 截图默认分辨率，后续会自动更新为设备分辨率
-    width, height = 1280, 720
+    adb_path = os.path.dirname(__file__)   # 取文件所在文件夹绝对路径
     
-    def __init__(self, adb_tcp:str=None, mode:int=1):
-        '''
-        adb_tcp：无线调试端口或ip+端口
-        mode: 1.开启日志  0. 关闭日志
-        '''
+    _instance = None
+    _initialized = False
+
+    def __new__(cls, *args, **kwargs):
+        # 如果类还没被实例化过，就新建一个；否则直接返回之前建的
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self, adb_tcp: str = None, mode: str = "less"):
+        """
+        adb_tcp:本地设备端口或者其他设备ip:端口;
+        mode:"less"或者"more"
+        """
+        # 如果已经初始化了，直接跳过
+        if ADB._initialized:
+            return
         self.mode = mode   
-        self.bz = bezierTrajectory()  
+        
         try:
-            if adb_tcp == None:
+            if not adb_tcp:
                 self.d = u2.connect()
+            elif ':' not in adb_tcp:
+                # 如果只传了端口号（比如 "5555"）
+                self.d = u2.connect(f'127.0.0.1:{adb_tcp}')
             else:
-                if len(adb_tcp.split(':')) == 1:
-                    self.d = u2.connect('127.0.0.1:'+adb_tcp.split(':')[-1])
-                else:
-                    self.d = u2.connect(adb_tcp)
-            self._size()
+                # 如果传了 ip:port （比如 "192.168.1.5:5555"）
+                self.d = u2.connect(adb_tcp)
+                
+            self._update_size()
+            
+            # 加载 OCR 引擎
             self.engine = RapidOCR()
-        except AttributeError:
-            log('设备初始化失败, 请检查设备是否连接', "error", "script")
+            
+            # 标记为已初始化
+            ADB._initialized = True
+            
+        except Exception as e:
+            log(f'设备初始化失败, 请检查设备是否连接。原始错误: {e}', "error", "script")
+            ADB._instance = None 
+            ADB._initialized = False
             exit()
             
-    def _size(self):
-        size = self.d.window_size()
-        self.width = size[0] if size[0]<size[1] else size[1]
-        self.height = size[1] if size[0]<size[1] else size[0]
-        if self.mode == 1:
-            log(f'设备初始化完成:宽:{self.width},高:{self.height}', source="script")
+    def _update_size(self):
+        """获取并更新设备分辨率（竖屏状态）"""
+        try:
+            w, h = self.d.window_size()
+            self.width = min(w, h)
+            self.height = max(w, h)
+            
+            if self.mode == "more":
+                log(f'设备初始化完成: 宽:{self.width}, 高:{self.height}', source="script")
+        except Exception as e:
+            log(f'获取分辨率失败: {e}', "error", "script")
 
     # ============================================================================================
     # ============================================================================================
@@ -97,22 +122,22 @@ class ADB:
     # API zh-CN
     def 启动应用(self, package_name:str):
         self.d.app_start(package_name)
-        if self.mode == 1:
+        if self.mode == "more":
             log('启动应用:{0}'.format(package_name), source="script")
         
     def 关闭应用(self, package_name:str):
         if package_name == 'all':
             self.d.app_stop_all()
-            if self.mode == 1:
+            if self.mode == "more":
                 log('关闭全部用户应用', source="script")
         else:
             self.d.app_stop(package_name)
-            if self.mode == 1:
+            if self.mode == "more":
                 log('关闭应用:{0}'.format(package_name), source="script")
                 
     def 息屏(self):
         self.d.screen_off()
-        if self.mode == 1:
+        if self.mode == "more":
             log('已息屏', source="script")
     
     def 截图保存(self, save_path:str=adb_path, *point:tuple):
@@ -120,7 +145,7 @@ class ADB:
             cv2.imwrite(save_path, self.d.screenshot(format='opencv'))
         else:
             cv2.imwrite(save_path, self.d.screenshot(format='opencv')[point[1]:point[3], point[0]:point[2]])
-        if self.mode == 1:
+        if self.mode == "more":
             log('已保存截图到:{0}'.format(save_path), source="script")
             
     def 获取截图对象(self, x1:int=None, y1:int=None, x2:int=None, y2:int=None):
@@ -134,8 +159,7 @@ class ADB:
             return img[y1:y2, x1:x2]
         else:
             return img
-        if self.mode == 1:
-            log('已保存截图到:{0}'.format(save_path), source="script")
+        
                      
     def 简单点击(self, x:int, y:int, r, *els):
         '''
@@ -145,7 +169,7 @@ class ADB:
         '''
         X, Y = x+r, y+r
         self.d.click(X, Y)
-        if self.mode == 1:
+        if self.mode == "more":
             log('快速点击{0} {1}'.format(X, Y), source="script")
               
     def 点击(self, x:int, y:int, loc:int, *els):
@@ -161,7 +185,7 @@ class ADB:
         self.d.touch.down(X, Y)
         time.sleep(np.random.uniform(0, 0.4))
         self.d.touch.up(X, Y)
-        if self.mode == 1:
+        if self.mode == "more":
             log('模拟点击{0} {1}'.format(X, Y), source="script")
     
     def 滑动(self, start_x:int, start_y:int, end_x:int, end_y:int, count:int=30, delay:float=0.01):
@@ -181,19 +205,19 @@ class ADB:
             time.sleep(0.01) 
         # 最后：手指抬起
         self.d.touch.up(end_x, end_y)
-        if self.mode == 1:
+        if self.mode == "more":
             log('模拟滑动{0} {1} -> {2} {3}'.format(start_x, start_y, end_x, end_y), source="script")
         
     def 输入(self, txt:str):
         self.d.clear_text() # 清除输入框所有内容
         self.d.send_keys(txt)
         self.d.send_action("send") # 根据输入框的需求，自动执行回车、搜索等指令,支持 go, search, send, next, done, previous
-        if self.mode == 1:
+        if self.mode == "more":
             log('模拟输入{0}'.format(txt), source="script")
         
     def adb命令行(self, shell:str):
         os.system(shell)
-        if self.mode == 1:
+        if self.mode == "more":
             log('执行命令行:{0}'.format(shell), source="script")
 
     def 缩扩图(self, img_path:str, resolution:tuple=(1280,720), save_path=None):
@@ -245,7 +269,7 @@ class ADB:
         main_color_sub = np.mean(sub_image, axis=(0, 1)).astype(int)
         # 计算颜色差值
         diff = np.sum(np.abs(main_color_roi - main_color_sub))
-        if self.mode == 1:
+        if self.mode == "more":
             log('{0}匹配结果:{1}'.format(os.path.basename(match_img), diff), source="script")
         return diff < color_threshold
     
@@ -287,7 +311,7 @@ class ADB:
                 img_name, value = result
                 output[img_name] = value
     
-        if self.mode == 1:
+        if self.mode == "more":
             log(output, source="script")
 
         if len(output) == 0:
@@ -319,20 +343,20 @@ class ADB:
         target_txt:目标文本（如果不提供则返回所有文本框信息）
         '''
         img_path = self.获取截图对象(x1, y1, x2, y2)
-        result_list = self.engine(img_path, use_det=True, use_cls=True, use_rec=True)
+        result = self.engine(img_path, use_det=True, use_cls=True, use_rec=True)
         try:
             result_dict = {}
-            for i in result_list:
+            for i in range(len(result.txts)):
                 if x1==None or y1==None:
-                    word, x1, y1, x2, y2 = i[1], int(i[0][0][0]), int(i[0][0][1]), int(i[0][2][0]), int(i[0][2][1])
+                    word, x1, y1, x2, y2 = result.txts[i], int(result.boxes[i][0][0]), int(result.boxes[i][0][1]), int(result.boxes[i][2][0]), int(result.boxes[i][2][1])
                 else:
-                    word, x1, y1, x2, y2 = i[1], int(i[0][0][0])+x1, int(i[0][0][1])+y1, int(i[0][2][0])+x1, int(i[0][2][1])+y1
+                    word, x1, y1, x2, y2 = result.txts[i], int(result.boxes[i][0][0])+x1, int(result.boxes[i][0][1])+y1, int(result.boxes[i][2][0])+x1, int(result.boxes[i][2][1])+y1
                 w, h = (x2-x1)//2, (y2-y1)//2
                 r = w if w <= h else h
                 result_dict[word] = (x1, y1, r)
 
-            if self.mode == 1:
-                log(result_dict, source="script")
+            if self.mode == "more":
+                log(str(result_dict), source="script")
 
             if target_txt == None:
                 if result_dict == {}:

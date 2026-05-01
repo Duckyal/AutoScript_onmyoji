@@ -6,11 +6,10 @@ from module.log import log
 
 
 app = FastAPI()
-# 让 FastAPI 自动识别 static 目录下所有的 css/js 文件
-app.mount("/static", StaticFiles(directory="static"), name="static")
 # 指定存放 HTML 模板的文件夹
 templates = Jinja2Templates(directory="templates")
-
+# 让 FastAPI 自动识别 static 目录下所有的 css/js 文件
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ui接口
 @app.get("/")
@@ -38,6 +37,7 @@ async def websocket_endpoint(websocket: WebSocket):
 import shutil, os
 from fastapi import UploadFile, Form
 from tasks import custom
+import asyncio
 
 @app.post("/start")
 async def run_task(request: Request):
@@ -50,7 +50,7 @@ async def run_task(request: Request):
         # 用 UploadFile 类型接收文件
         py_file: UploadFile = form.get("file")
         if not py_file:
-            return {"status": "error", "message": "未收到文件"}
+            log("未收到py文件")
         # 清除临时文件
         shutil.rmtree("tmp", ignore_errors=True)
         # 保存到本地
@@ -60,26 +60,30 @@ async def run_task(request: Request):
         with open(file_path, "wb") as f:
             shutil.copyfileobj(py_file.file, f)
         log(f'收到自定义脚本: {py_file.filename}，进程: {process}')
-        custom.run(py_file.filename)
+        asyncio.create_task(asyncio.to_thread(custom.run, py_file.filename))
     # 执行预制任务
     else:
         data = await request.json()
-        log(data)
 
-        task_name = data.get("taskName")
-        config    = data.get("config", {})
-        process   = data.get("process", {})
-        log(f"收到内置任务: {task_name}，进程: {process}", "info")
-        log(f"配置: {config}", "info")
+        task_name = data.get("task")
+        config = data.get("config", {})
+        process = data.get("process", {})
+        base = data.get("base", {})
+        log(f"收到内置任务: {task_name}，进程: {process}，设备信息: {base}，任务配置: {config}", "info")
 
-        # TODO: 根据任务类型分发
-        # if data["task"] == "yuhun": ...
-        # if data["task"] == "douji": ...
+        # 根据任务类型分发
+        from module.adb import ADB
+        from tasks import yuhun, douji, tupo
 
-        return {"status": "success", "message": f"内置任务 [{task_name}] 已启动"}
-    
+        device = ADB(base["device"], base["mode"])
+        task_class = None
+        if task_name == "yuhun":
+            task_class = yuhun.YuhunTask
+        elif task_name == "douji":
+            task_class = douji.DoujiTask
+        elif task_name == "tupo":
+            task_class = tupo.TupoTask
 
-# 
-
+        asyncio.create_task(asyncio.to_thread(task_class, device, config))
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

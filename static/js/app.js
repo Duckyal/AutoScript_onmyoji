@@ -57,8 +57,6 @@ const App = {
     const currentProcess = AppState.getCurrentProcess();
     const taskName = AppState.getCurrentTask();
     const taskConfig = TaskManager.getCurrentConfig();
-    
-    // 修正：显式提取 .value
     const baseDeviceEl = document.getElementById("base-device");
     const baseModeEl = document.getElementById("base-mode");
 

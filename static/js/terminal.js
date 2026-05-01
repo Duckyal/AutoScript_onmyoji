@@ -191,6 +191,7 @@ const TerminalManager = {
       this.websocket = new WebSocket(url);
       
       this.websocket.onopen = () => {
+        this.isConnecting = false; // 连接成功后重置状态
         this.addLog('已连接到日志服务器', 'success');
       };
       
@@ -210,15 +211,17 @@ const TerminalManager = {
       };
       
       this.websocket.onclose = () => {
+        this.isConnecting = false; // 断开后重置状态，允许下次重连
         this.addLog('与日志服务器的连接已断开', 'warning');
         // 5秒后尝试重连
-        setTimeout(() => this.connectWebSocket(url), 5000);
+        setTimeout(() => this.connectWebSocket(), 5000);
       };
       
       this.websocket.onerror = (error) => {
         this.addLog('WebSocket 连接错误', 'error');
       };
     } catch (error) {
+      this.isConnecting = false; // 发生异常时也要重置状态
       this.addLog(`无法连接到日志服务器: ${error.message}`, 'error');
     }
   },

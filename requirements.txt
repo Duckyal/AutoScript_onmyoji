@@ -19,7 +19,7 @@ jinja2
 starlette<0.36
 
 # 前端
-uvicorn
+uvicorn[standard]
 
 # FastAPI 处理 FormData 需要一个额外的依赖库
 python-multipart
