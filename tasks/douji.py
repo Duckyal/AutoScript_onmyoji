@@ -1,5 +1,4 @@
 import asyncio
-from module.log import log
 from module.adb import ADB
 
 class DoujiTask:

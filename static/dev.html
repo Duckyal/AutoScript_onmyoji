@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoScript - 开发控制台</title>
+  <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: #f0f2f5;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    .header {
+      background-color: #1f2937;
+      color: #ffffff;
+      padding: 0 24px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+    }
+
+    .header h1 {
+      font-size: 20px;
+      font-weight: 500;
+    }
+
+    .header span {
+      color: #22c55e;
+      font-weight: bold;
+      margin-left: 8px;
+    }
+
+    .toggle-sidebar-btn {
+      background: #374151;
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .toggle-sidebar-btn:hover {
+      background: #4b5563;
+    }
+
+    .main-container {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .stream-section {
+      flex: 1;
+      background-color: #000;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stream-container {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      background-color: #2b2b2b;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+    }
+
+    .sidebar {
+      width: 320px;
+      background-color: #ffffff;
+      padding: 24px;
+      border-left: 1px solid #e5e7eb;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      transition: transform 0.3s ease, width 0.3s ease, padding 0.3s ease;
+    }
+
+    .sidebar.hidden {
+      width: 0px;
+      padding: 0px;
+      transform: translateX(320px);
+      overflow: hidden;
+    }
+
+    .tool-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .tool-card h3 {
+      font-size: 16px;
+      margin-bottom: 16px;
+      color: #374151;
+      border-bottom: 1px solid #f3f4f6;
+      padding-bottom: 8px;
+    }
+
+    .control-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: #1f2937;
+      margin-bottom: 16px;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .input-group label {
+      font-size: 14px;
+      color: #6b7280;
+    }
+
+    .input-group input[type="text"] {
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 10px;
+      background-color: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.2s;
+    }
+
+    .btn:hover {
+      background-color: #2563eb;
+    }
+
+    .upload-area {
+      margin-bottom: 12px;
+      border: 2px dashed #d1d5db;
+      padding: 12px;
+      border-radius: 4px;
+      text-align: center;
+    }
+
+    .upload-area img {
+      max-width: 100%;
+      max-height: 150px;
+      margin-top: 8px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="header">
+    <div class="header-left">
+      <h1>当前连接设备: <span id="device-name">加载中...</span></h1>
+    </div>
+    <button class="toggle-sidebar-btn" id="toggle-btn">隐藏工具栏</button>
+  </header>
+
+  <div class="main-container">
+    
+    <!-- 左侧：视频流 -->
+    <div class="stream-section">
+      <div class="stream-container" id="stream-container" style="cursor: crosshair;">
+        <img id="stream-img" src="/api/stream?device={{device}}" alt="Video Stream" style="width: 100%; height: 100%; object-fit: contain; pointer-events:none;">
+        <div id="selection-overlay" style="
+            position: absolute; 
+            border: 2px dashed #22c55e; 
+            background-color: rgba(34, 197, 94, 0.2); 
+            display: none; 
+            pointer-events: none; 
+            z-index: 10;">
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧：可隐藏侧边栏 -->
+    <div class="sidebar" id="sidebar">
+      
+      <div class="tool-card">
+        <h3>模式与保存设置</h3>
+        
+        <div class="control-box">
+          <input type="checkbox" id="screenshot-mode"> 
+          <label for="screenshot-mode" style="cursor:pointer;">拉框截图模式(中键切换)</label>
+        </div>
+
+        <div class="input-group">
+          <label for="folder-path">指定保存文件夹路径：</label>
+          <input type="text" id="folder-path" placeholder="点击此处选择文件夹" readonly style="cursor: pointer; background-color: #f9fafb;">
+        </div>
+
+        <div class="input-group">
+          <label for="file-name">保存文件名 (带后缀)：</label>
+          <input type="text" id="file-name" placeholder="例如: my_shot.png">
+        </div>
+
+        <div class="upload-area" style="margin-bottom: 12px;">
+          <label style="font-size:14px;color:#6b7280;display:block;margin-bottom:8px;">框选区域预览：</label>
+          <img id="crop-preview" src="" alt="请在左侧画面框选" style="display:none; max-width:100%; max-height:120px; border-radius:4px; border: 1px solid #e5e7eb;">
+        </div>
+
+        <button class="btn" id="save-btn">添加并保存</button>
+      </div>
+
+    </div>
+  </div>
+  
+  {% if not device_ok %}
+    <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0, 0, 0, 0.7); backdrop-filter: blur(6px); display: flex; justify-content: center; align-items: center; z-index: 99999;">
+        <div style="width: 360px; max-width: 90vw; padding: 32px 28px; background: rgba(49, 50, 68, 0.95); border: 1px solid rgba(243, 139, 168, 0.4); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6); text-align: center; color: #cdd6f4; font-family: 'Segoe UI', sans-serif;">
+        <svg style="color: #f38ba8; margin-bottom: 12px;" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
+        <h3 style="font-size: 20px; color: #f38ba8; margin: 0 0 10px 0; font-weight: 600;">ADB 设备不可用</h3>
+        <p style="font-size: 14px; color: #a6adc8; margin: 0 0 8px 0; word-break: break-all;">设备：{{ device_name }}</p>
+        <p style="font-size: 14px; color: #a6adc8; margin: 0 0 8px 0; word-break: break-all;">原因：{{ device_msg }}</p>
+        <p style="font-size: 12px; color: #6c7086; margin-bottom: 22px;">请确认设备已通过 USB 或网络连接，并返回重新选择</p>
+        <button style="width: 100%; padding: 12px; background-color: #89b4fa; color: #1e1e2e; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer;"
+                onclick="window.location.href='/'">返回设备选择</button>
+        </div>
+    </div>
+    <script>
+        document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { e.preventDefault(); }
+        });
+    </script>
+  {% endif %}
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const deviceName = urlParams.get('device') || '未指定设备';
+    document.getElementById('device-name').textContent = deviceName;
+    fetch(`/api/start_stream?device_name=${deviceName}`).catch(err => console.error(err));
+
+    const sidebar = document.getElementById('sidebar');
+    const toggleBtn = document.getElementById('toggle-btn');
+    toggleBtn.addEventListener('click', () => {
+      sidebar.classList.toggle('hidden');
+      toggleBtn.textContent = sidebar.classList.contains('hidden') ? '显示工具栏' : '隐藏工具栏';
+    });
+
+    const streamContainer = document.getElementById('stream-container');
+    const streamImg = document.getElementById('stream-img');
+    const overlay = document.getElementById('selection-overlay');
+    const screenshotMode = document.getElementById('screenshot-mode');
+    const cropPreview = document.getElementById('crop-preview');
+    const folderPathInput = document.getElementById('folder-path');
+    const fileNameInput = document.getElementById('file-name');
+    const saveBtn = document.getElementById('save-btn');
+
+    let isDrawing = false;
+    let startX = 0, startY = 0;
+    let croppedBlob = null;
+    let mouseDownTime = 0;
+    let mouseDownCoords = {x: 0, y: 0};
+
+    // 存储视频流的真实分辨率
+    let currentNaturalW = 1080;
+    let currentNaturalH = 1920;
+
+    // 更新鼠标样式
+    function updateCursor() {
+        streamContainer.style.cursor = screenshotMode.checked ? 'crosshair' : 'default';
+    }
+    screenshotMode.addEventListener('change', updateCursor);
+    updateCursor();
+
+    // 手动模拟 object-fit: contain，计算真实画面显示区域和黑边偏移
+    function getImgBounds() {
+        // 核心修改：优先从流图片本身获取真实分辨率，解决初始比例不对导致的黑边计算错误
+        const nw = streamImg.naturalWidth || currentNaturalW;
+        const nh = streamImg.naturalHeight || currentNaturalH;
+        currentNaturalW = nw;
+        currentNaturalH = nh;
+
+        const containerRect = streamContainer.getBoundingClientRect();
+        const cW = containerRect.width;
+        const cH = containerRect.height;
+        const iR = nw / nh;
+        const cR = cW / cH;
+        
+        let dW, dH, offsetX, offsetY;
+        if (iR > cR) {
+            // 图片更宽，左右撑满，上下留黑边
+            dW = cW;
+            dH = cW / iR;
+            offsetX = 0;
+            offsetY = (cH - dH) / 2;
+        } else {
+            // 图片更高，上下撑满，左右留黑边
+            dH = cH;
+            dW = cH * iR;
+            offsetX = (cW - dW) / 2;
+            offsetY = 0;
+        }
+        return { offsetX, offsetY, dispWidth: dW, dispHeight: dH };
+    }
+
+    function getRealCoords(clientX, clientY) {
+        const bounds = getImgBounds();
+        const containerRect = streamContainer.getBoundingClientRect();
+        let x = clientX - containerRect.left - bounds.offsetX;
+        let y = clientY - containerRect.top - bounds.offsetY;
+        
+        x = Math.max(0, Math.min(x, bounds.dispWidth));
+        y = Math.max(0, Math.min(y, bounds.dispHeight));
+        
+        return {
+            x: Math.round(x * (currentNaturalW / bounds.dispWidth)),
+            y: Math.round(y * (currentNaturalH / bounds.dispHeight))
+        };
+    }
+
+    streamContainer.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        
+        // 鼠标中键切换模式
+        if (e.button === 1) {
+            screenshotMode.checked = !screenshotMode.checked;
+            updateCursor();
+            return;
+        }
+
+        // 右键不处理
+        if (e.button !== 0) return;
+
+        mouseDownTime = Date.now();
+        mouseDownCoords = getRealCoords(e.clientX, e.clientY);
+        
+        if (screenshotMode.checked) {
+            isDrawing = true;
+            const r = streamContainer.getBoundingClientRect();
+            const bounds = getImgBounds();
+            
+            // 限制起点在真实画面区域内，不能画到黑边上
+            startX = Math.max(bounds.offsetX, Math.min(e.clientX - r.left, bounds.offsetX + bounds.dispWidth));
+            startY = Math.max(bounds.offsetY, Math.min(e.clientY - r.top, bounds.offsetY + bounds.dispHeight));
+            
+            overlay.style.left = startX + 'px';
+            overlay.style.top = startY + 'px';
+            overlay.style.width = '0px';
+            overlay.style.height = '0px';
+            overlay.style.display = 'block';
+        }
+    });
+
+    streamContainer.addEventListener('mousemove', (e) => {
+        if (!isDrawing) return;
+        const r = streamContainer.getBoundingClientRect();
+        const bounds = getImgBounds();
+        
+        let cx = e.clientX - r.left;
+        let cy = e.clientY - r.top;
+        
+        // 核心修改：将鼠标坐标死死限制在真实画面显示区域内
+        cx = Math.max(bounds.offsetX, Math.min(cx, bounds.offsetX + bounds.dispWidth));
+        cy = Math.max(bounds.offsetY, Math.min(cy, bounds.offsetY + bounds.dispHeight));
+
+        const w = cx - startX;
+        const h = cy - startY;
+        overlay.style.left = (w < 0 ? cx : startX) + 'px';
+        overlay.style.top = (h < 0 ? cy : startY) + 'px';
+        overlay.style.width = Math.abs(w) + 'px';
+        overlay.style.height = Math.abs(h) + 'px';
+    });
+
+    streamContainer.addEventListener('mouseup', async (e) => {
+        if (e.button !== 0) return;
+
+        if (screenshotMode.checked) {
+            if (!isDrawing) return;
+            isDrawing = false;
+            overlay.style.display = 'none';
+
+            const bounds = getImgBounds();
+            const r = streamContainer.getBoundingClientRect();
+            
+            let endX = Math.max(bounds.offsetX, Math.min(e.clientX - r.left, bounds.offsetX + bounds.dispWidth));
+            let endY = Math.max(bounds.offsetY, Math.min(e.clientY - r.top, bounds.offsetY + bounds.dispHeight));
+
+            // 换算为真实像素比例
+            let ratioX1 = (startX - bounds.offsetX) / bounds.dispWidth;
+            let ratioY1 = (startY - bounds.offsetY) / bounds.dispHeight;
+            let ratioX2 = (endX - bounds.offsetX) / bounds.dispWidth;
+            let ratioY2 = (endY - bounds.offsetY) / bounds.dispHeight;
+
+            ratioX1 = Math.max(0, Math.min(1, ratioX1));
+            ratioY1 = Math.max(0, Math.min(1, ratioY1));
+            ratioX2 = Math.max(0, Math.min(1, ratioX2));
+            ratioY2 = Math.max(0, Math.min(1, ratioY2));
+
+            if (Math.abs(ratioX2 - ratioX1) < 0.02 || Math.abs(ratioY2 - ratioY1) < 0.02) return;
+
+            const frameImg = new Image();
+            frameImg.onload = () => {
+                // 更新真实分辨率，确保下次计算黑边时绝对准确
+                currentNaturalW = frameImg.naturalWidth;
+                currentNaturalH = frameImg.naturalHeight;
+                
+                const realW = frameImg.naturalWidth;
+                const realH = frameImg.naturalHeight;
+                
+                const realX = Math.round(Math.min(ratioX1, ratioX2) * realW);
+                const realY = Math.round(Math.min(ratioY1, ratioY2) * realH);
+                const cropW = Math.round(Math.abs(ratioX2 - ratioX1) * realW);
+                const cropH = Math.round(Math.abs(ratioY2 - ratioY1) * realH);
+
+                const canvas = document.createElement('canvas');
+                canvas.width = cropW;
+                canvas.height = cropH;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(frameImg, realX, realY, cropW, cropH, 0, 0, cropW, cropH);
+
+                const dataURL = canvas.toDataURL('image/png');
+                cropPreview.src = dataURL;
+                cropPreview.style.display = 'block';
+
+                fetch(dataURL).then(res => res.blob()).then(b => croppedBlob = b);
+            };
+            frameImg.src = `/api/current_frame?device_name=${encodeURIComponent(deviceName)}&_t=${Date.now()}`;
+
+        } else {
+            const endCoords = getRealCoords(e.clientX, e.clientY);
+            const duration = Date.now() - mouseDownTime;
+            const distX = Math.abs(endCoords.x - mouseDownCoords.x);
+            const distY = Math.abs(endCoords.y - mouseDownCoords.y);
+
+            const formData = new FormData();
+            formData.append('device_name', deviceName);
+            
+            if (distX < 15 && distY < 15) {
+                formData.append('action', 'tap');
+                formData.append('x1', mouseDownCoords.x);
+                formData.append('y1', mouseDownCoords.y);
+            } else {
+                formData.append('action', 'swipe');
+                formData.append('x1', mouseDownCoords.x);
+                formData.append('y1', mouseDownCoords.y);
+                formData.append('x2', endCoords.x);
+                formData.append('y2', endCoords.y);
+                formData.append('duration', Math.min(duration, 500)); 
+            }
+            fetch('/api/input', { method: 'POST', body: formData });
+        }
+    });
+
+    streamContainer.addEventListener('auxclick', (e) => e.preventDefault());
+    streamContainer.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
+
+    saveBtn.addEventListener('click', async () => {
+        if (!croppedBlob) { alert('请先在左侧画面上拉框选择截图区域！'); return; }
+        const folderPath = folderPathInput.value;
+        const fileName = fileNameInput.value;
+        if (!folderPath) { alert('请先输入文件夹路径'); return; }
+        if (!fileName) { alert('请输入保存文件名'); return; }
+
+        const formData = new FormData();
+        formData.append('device_name', deviceName);
+        formData.append('folder_path', folderPath);
+        formData.append('file_name', fileName);
+        formData.append('image', croppedBlob, fileName);
+
+        try {
+            const res = await fetch('/api/screenshot', { method: 'POST', body: formData });
+            const data = await res.json();
+            alert(data.success ? `截屏成功！\n已保存至: ${data.path}` : `截屏失败: ${data.message}`);
+        } catch (err) {
+            alert('请求后台失败: ' + err.message);
+        }
+    });
+    
+    // 点击输入框，调用后端弹出系统选目录窗口
+    folderPathInput.addEventListener('click', async () => {
+        try {
+            const res = await fetch('/api/pick_folder');
+            const data = await res.json();
+            if (data.success && data.path) {
+                folderPathInput.value = data.path;
+            }
+        } catch (err) {
+            alert('选择文件夹失败: ' + err.message);
+        }
+    });
+
+  </script>
+
+</body>
+</html>

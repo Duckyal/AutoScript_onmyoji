@@ -23,3 +23,7 @@ uvicorn[standard]
 
 # FastAPI 处理 FormData 需要一个额外的依赖库
 python-multipart
+
+# scrcpy 用于开发控制台
+av
+scrcpy-client --no-deps

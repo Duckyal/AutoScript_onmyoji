@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoScript - 主页</title>
+  <!-- 网页图标 -->
+  <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+  <!-- CSS 文件 -->
+  <link rel="stylesheet" href="/static/css/variables.css">
+  <link rel="stylesheet" href="/static/css/reset.css">
+  <link rel="stylesheet" href="/static/css/layout.css">
+  <link rel="stylesheet" href="/static/css/header.css">
+  <link rel="stylesheet" href="/static/css/sidebar-task.css">
+  <link rel="stylesheet" href="/static/css/content.css">
+  <link rel="stylesheet" href="/static/css/terminal.css">
+  <link rel="stylesheet" href="/static/css/form.css">
+</head>
+<body>
+  <!-- 顶部标题栏 -->
+  <header class="header">
+    <h1 class="header__title">
+      <span class="header__title-main">AutoScript - 主页 >> 设备({{device}})</span>
+      <span class="header__title-separator" id="titleSeparator" style="display: none;"> &gt; </span>
+      <span class="header__title-process" id="titleProcess"></span>
+    </h1>
+    <div class="header__start-btn" style="background-color: transparent; padding: 0; gap: 10px; border: none; cursor: default;">
+      <!-- 使用 a 标签实现跳转，并保留按钮样式 -->
+      <a class="header__start-btn" href="/dev?device={{device}}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        开发
+      </a>
+
+      <button class="header__start-btn" id="startBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="5,3 19,12 5,21"></polygon>
+        </svg>
+        执行
+      </button>
+    </div>
+  </header>
+
+  <!-- 主容器 -->
+  <div class="main-container">
+    <!-- 右侧内容区域 -->
+    <div class="content-wrapper">
+      <!-- 上方 2/3：任务侧边栏和内容 -->
+      <div class="content-upper">
+        <!-- 任务侧边栏 -->
+        <aside class="sidebar-task">
+          <h2 class="sidebar-task__title">任务</h2>
+          <ul class="sidebar-task__list" id="taskList">
+            <li class="sidebar-task__item active" data-task="yuhun" data-name="御魂">御魂</li>
+            <li class="sidebar-task__item" data-task="douji" data-name="斗技">斗技</li>
+            <li class="sidebar-task__item" data-task="tupo" data-name="突破">突破</li>
+            <li class="sidebar-task__item" data-task="custom" data-name="自定义">自定义</li>
+          </ul>
+        </aside>
+
+        <!-- 任务内容区域 -->
+        <main class="content-main" id="contentMain">
+          <!-- 御魂配置 -->
+          <div class="task-panel" id="panel-yuhun">
+            <h3 class="task-panel__title">御魂配置</h3>
+            <div class="form-group">
+              <label class="form-label" for="yuhun-layer">挑战层数</label>
+              <select class="form-select" id="yuhun-layer" name="layer">
+                <option value="10">魂十</option>
+                <option value="11">魂十一</option>
+                <option value="12">魂十二</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="yuhun-count">挑战次数(0为不限)</label>
+              <input class="form-input" type="number" id="yuhun-count" name="count" value="100" min="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="yuhun-team">组队模式</label>
+              <select class="form-select" id="yuhun-team" name="team">
+                <option value="solo">单人</option>
+                <option value="leader">队长</option>
+                <option value="member">队员</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="yuhun-shikigami">式神选择</label>
+              <input class="form-input" type="text" id="yuhun-shikigami" name="shikigami" placeholder="输入式神名称">
+            </div>
+          </div>
+
+          <!-- 斗技配置 -->
+          <div class="task-panel" id="panel-douji" style="display: none;">
+            <h3 class="task-panel__title">斗技配置</h3>
+            <div class="form-group">
+              <label class="form-label" for="douji-count">挑战次数</label>
+              <select class="form-input" id="douji-count" name="count">
+                <option value="none">不限次数</option>
+                <option value="gold">到达名仕</option>
+                <option value="point">荣誉点满</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 突破配置 -->
+          <div class="task-panel" id="panel-tupo" style="display: none;">
+            <h3 class="task-panel__title">突破配置</h3>
+            <div class="form-group">
+              <label class="form-label" for="tupo-type">突破类型</label>
+              <select class="form-select" id="tupo-type" name="type">
+                <option value="kekkai">个人突破</option>
+                <option value="ryou">寮突破</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="tupo-count">突破次数(0为不限)</label>
+              <input class="form-input" type="number" id="tupo-count" name="count" value="30" min="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="tupo-refresh">自动刷新</label>
+              <select class="form-select" id="tupo-refresh" name="refresh">
+                <option value="yes">是</option>
+                <option value="no">否</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 自定义配置 -->
+          <div class="task-panel" id="panel-custom" style="display: none;">
+            <h3 class="task-panel__title">自定义脚本</h3>
+            <p class="task-panel__text">请选择文件夹</p>
+            <button class="btn btn--primary" id="selectFileBtn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              </svg>
+              打开资源文件夹
+            </button>
+            <p class="task-panel__folder-path" id="fileName"></p>
+          </div>
+        </main>
+      </div>
+
+      <!-- 下方 1/3：终端界面 -->
+      <div class="terminal">
+        <div class="terminal__header">
+          <span class="terminal__title">输出日志</span>
+          <button class="terminal__clear-btn" id="clearTerminalBtn" title="清空日志">清空</button>
+        </div>
+        <div class="terminal__body" id="terminalBody"></div>
+      </div>
+    </div>
+  </div>
+
+   <!-- 设备校验失败时才渲染，不可关闭，仅提供返回 -->
+  {% if not device_ok %}
+  <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0, 0, 0, 0.7); backdrop-filter: blur(6px); display: flex; justify-content: center; align-items: center; z-index: 99999;">
+    <div style="width: 360px; max-width: 90vw; padding: 32px 28px; background: rgba(49, 50, 68, 0.95); border: 1px solid rgba(243, 139, 168, 0.4); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6); text-align: center; color: #cdd6f4; font-family: 'Segoe UI', sans-serif;">
+      <svg style="color: #f38ba8; margin-bottom: 12px;" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+      <h3 style="font-size: 20px; color: #f38ba8; margin: 0 0 10px 0; font-weight: 600;">ADB 设备不可用</h3>
+      <p style="font-size: 14px; color: #a6adc8; margin: 0 0 8px 0; word-break: break-all;">设备：{{ device_name }}</p>
+      <p style="font-size: 14px; color: #a6adc8; margin: 0 0 8px 0; word-break: break-all;">原因：{{ device_msg }}</p>
+      <p style="font-size: 12px; color: #6c7086; margin-bottom: 22px;">请确认设备已通过 USB 或网络连接，并返回重新选择</p>
+      <button style="width: 100%; padding: 12px; background-color: #89b4fa; color: #1e1e2e; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer;"
+              onclick="window.location.href='/'">返回设备选择</button>
+    </div>
+  </div>
+  <script>
+    // 阻止 ESC 关闭
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { e.preventDefault(); }
+    });
+  </script>
+  {% endif %}
+
+  <!-- JavaScript 文件 -->
+  <script src="/static/js/task.js?v={{ time_now }}"></script>
+  <script src="/static/js/terminal.js?v={{ time_now }}"></script>
+  <script src="/static/js/app.js?v={{ time_now }}"></script>
+</body>
+</html>

@@ -59,7 +59,7 @@
   white-space: nowrap;
 }
 
-/* 启动按钮 */
+/* 标题栏按钮 */
 .header__start-btn {
   display: flex;
   align-items: center;
@@ -89,6 +89,7 @@
   flex-shrink: 0;
 }
 
+
 /* ==================== 响应式 - 手机 ==================== */
 @media (max-width: 480px) {
   .header {
@@ -110,25 +111,6 @@
   
   .header__title-process {
     font-size: var(--font-size-base);
-  }
-  
-  /* 手机上只显示当前进程名，如果没有则显示简称 */
-  .header__title::before {
-    content: "AutoScript";
-    color: var(--color-text-primary);
-    font-weight: var(--font-weight-semibold);
-  }
-  
-  .header__title:has(.header__title-process:not(:empty))::before {
-    display: none;
-  }
-  
-  .header__start-btn {
-    padding: var(--spacing-2);
-  }
-  
-  .header__start-btn-text {
-    display: none;
   }
 }
 

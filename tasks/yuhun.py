@@ -1,5 +1,4 @@
 import asyncio
-from module.log import log
 from module.adb import ADB
 
 class YuhunTask:
@@ -9,4 +8,5 @@ class YuhunTask:
         asyncio.run(self.run())
     
     async def run(self):
-        log(f"Running Yuhun Task with config: {self.config}")
+        self.device.log(f"Running Yuhun Task with config: {self.config}")
+        self.device.找字()

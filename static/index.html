@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoScript - 设备启动器</title>
+  <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+  <style>
+    html, body {
+      width: 100%;       /* 强制宽度占满全屏 */
+      height: 100%;      /* 强制高度占满全屏 */
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: #1e1e2e;
+      background-size: cover;       /* 确保图片覆盖整个区域 */
+      background-position: center;  /* 确保图片居中 */
+      background-repeat: no-repeat; /* 禁止图片平铺 */
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: #cdd6f4;
+    }
+    .launcher-card {
+      background: rgba(49, 50, 68, 0.75); /* 将纯色背景改为半透明 (0.75是透明度，可自行调整0~1) */
+      border: 1px solid rgba(255, 255, 255, 0.15); /* 加一条微微透亮的边框，提升质感 */
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      width: 360px;
+      text-align: center;
+      position: relative;
+    }
+    .launcher-title {
+      margin-bottom: 30px;
+      font-size: 24px;
+      color: #89b4fa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+    .form-group {
+      margin-bottom: 25px;
+      text-align: left;
+      position: relative;
+    }
+    .form-label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      color: #a6adc8;
+    }
+    .form-input {
+      width: 100%;
+      padding: 12px;
+      box-sizing: border-box;
+      border-radius: 8px;
+      border: 2px solid #45475a;
+      background-color: #1e1e2e;
+      color: #cdd6f4;
+      font-size: 14px;
+      transition: border-color 0.3s;
+    }
+    .form-input:focus {
+      outline: none;
+      border-color: #89b4fa;
+    }
+    .btn-login {
+      width: 100%;
+      padding: 12px;
+      background-color: #89b4fa;
+      color: #1e1e2e;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background-color 0.3s, transform 0.1s;
+    }
+    .btn-login:hover {
+      background-color: #74c7ec;
+    }
+    .btn-login:active {
+      transform: scale(0.98);
+    }
+    .refresh-btn {
+      background: none;
+      border: none;
+      color: #a6adc8;
+      cursor: pointer;
+      font-size: 12px;
+      margin-top: 15px;
+      text-decoration: underline;
+    }
+    .refresh-btn:disabled {
+      color: #585b70;
+      cursor: not-allowed;
+    }
+    .status-text {
+      font-size: 12px;
+      color: #f38ba8; /* 错误提示用红色 */
+      margin-top: 10px;
+      height: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="launcher-card">
+    <div class="launcher-title">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+        <line x1="12" y1="18" x2="12.01" y2="18"></line>
+      </svg>
+      adb设备连接
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="deviceInput">选择或输入设备序列号</label>
+      <input class="form-input" list="adbDevices" id="deviceInput" placeholder="请选择或输入设备ID">
+      <datalist id="adbDevices">
+        <!-- JS 会动态往这里插入 option -->
+      </datalist>
+      <div class="status-text" id="statusText"></div>
+    </div>
+
+    <button class="btn-login" id="loginBtn">登录并启动</button>
+    
+    <br>
+    <button class="refresh-btn" id="refreshBtn">刷新设备列表</button>
+  </div>
+
+  <script>
+    const deviceInput = document.getElementById('deviceInput');
+    const datalist = document.getElementById('adbDevices');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const statusText = document.getElementById('statusText');
+    const loginBtn = document.getElementById('loginBtn');
+
+    // 获取设备的函数
+    async function fetchDevices() {
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = '正在搜索设备...';
+      statusText.textContent = '';
+      
+      try {
+        // 请求后端的 /api/get_devices 接口
+        const response = await fetch('/api/get_devices');
+        if (!response.ok) throw new Error('网络响应错误');
+        
+        const data = await response.json();
+        
+        // 清空旧的选项
+        datalist.innerHTML = '';
+        
+        if (data.devices && data.devices.length > 0) {
+          // 有设备，填充下拉框
+          data.devices.forEach(device => {
+            const option = document.createElement('option');
+            option.value = device;
+            datalist.appendChild(option);
+          });
+          statusText.style.color = '#a6e3a1'; // 绿色提示
+          statusText.textContent = `成功检测到 ${data.devices.length} 个设备`;
+        } else {
+          // 无设备
+          statusText.style.color = '#f38ba8';
+          statusText.textContent = '未检测到已连接的设备';
+        }
+      } catch (error) {
+        console.error('获取设备失败:', error);
+        statusText.style.color = '#f38ba8';
+        statusText.textContent = '获取设备失败，请检查后端是否运行';
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = '刷新设备列表';
+      }
+    }
+
+    // 页面加载完成时，自动获取一次设备
+    window.addEventListener('DOMContentLoaded', fetchDevices);
+
+    // 绑定刷新按钮
+    refreshBtn.addEventListener('click', fetchDevices);
+
+    // 绑定登录按钮
+    loginBtn.addEventListener('click', async function() {
+      let deviceName = deviceInput.value.trim();
+      // 如果输入框为空
+      if (!deviceName) {
+        const availableDevices = datalist.options;
+        
+        if (availableDevices.length === 1) {
+        // 列表只有 1 个设备，自动使用它
+            deviceName = availableDevices[0].value;
+        } else if (availableDevices.length === 0) {
+            // 没有设备
+            statusText.style.color = '#f38ba8';
+            statusText.textContent = '未检测到设备，请先连接设备或手动输入';
+            return;
+        } else {
+            // 有多个设备，必须手动选择
+            statusText.style.color = '#f38ba8';
+            statusText.textContent = '检测到多个设备，请在下拉列表中选择一个';
+            return;
+        }
+      }
+
+      // 跳转到设备管理页（/home）
+      setTimeout(() => {
+        window.location.href = '/home?device=' + encodeURIComponent(deviceName);
+      }, 100);
+    });
+
+    // 回车键直接登录的也要保持兼容
+    deviceInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter' && !loginBtn.disabled) {
+        loginBtn.click();
+    }
+    });
+
+  </script>
+  <script>
+    (async function () {
+    try {
+        const r = await fetch('/api/latest_wallpaper');
+        const data = await r.json();
+        if (data.url) {
+        document.body.style.backgroundImage = `url(${data.url})`;
+        document.body.style.backgroundSize = 'cover';
+        }
+    } catch (e) { 
+        console.error(e); }
+    })();
+  </script>
+</body>
+</html>

@@ -1,125 +1,87 @@
 /**
  * 应用主入口
- * 初始化所有模块
  */
-
 const App = {
-  /**
-   * 初始化应用
-   */
+  deviceName: '',
+  baseMode: 'auto', // 由于 HTML 中没有模式选择器，这里默认给 auto
+
   init() {
-    // 初始化各模块
-    TerminalManager.init();
-    ProcessManager.init();
-    TaskManager.init();
-    DialogManager.init();
-    
-    // 添加初始化日志
-    TerminalManager.addLog('系统就绪，等待任务...', 'success');
-    
-    // 绑定全局事件
-    this.bindGlobalEvents();
+    // 从 URL 获取设备名
+    const params = new URLSearchParams(window.location.search);
+    this.deviceName = params.get('device_name') || '';
+
+    // 初始化模块
+    if (typeof TerminalManager !== 'undefined') TerminalManager.init();
+    if (typeof TaskManager !== 'undefined') TaskManager.init();
+
+    this.bindEvents();
   },
-  
-  /**
-   * 绑定全局事件
-   */
-  bindGlobalEvents() {
-    // ESC 键关闭所有对话框
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        DialogManager.hideAddProcessDialog();
-        DialogManager.hideRenameDialog();
-      }
-    });
-    
-    // 防止表单提交刷新页面
-    document.querySelectorAll('form').forEach(form => {
-      form.addEventListener('submit', (e) => {
-        e.preventDefault();
-      });
-    });
-    
-    // 启动按钮点击事件
+
+  bindEvents() {
     const startBtn = document.getElementById('startBtn');
     if (startBtn) {
-      startBtn.addEventListener('click', () => {
-        this.startTask();
-      });
+      startBtn.addEventListener('click', () => this.startTask());
     }
   },
-  
-  /**
-   * 获取当前配置（用于发送到 FastAPI）
-   * @returns {Object} 配置对象
-   */
-  getCurrentConfig() {
-    const currentProcess = AppState.getCurrentProcess();
-    const taskName = AppState.getCurrentTask();
-    const taskConfig = TaskManager.getCurrentConfig();
-    const baseDeviceEl = document.getElementById("base-device");
-    const baseModeEl = document.getElementById("base-mode");
 
-    const baseConfig = {
-      "device": baseDeviceEl ? baseDeviceEl.value : null,
-      "mode": baseModeEl ? baseModeEl.value : null
-    };
-    
-    return {
-      process: currentProcess?.name,
-      task: taskName,
-      base: baseConfig,
-      config: taskConfig
-    };
-  },
-  
-  /**
-   * 启动任务（示例方法，需要连接实际的 FastAPI）
-   */
   async startTask() {
-    const config = this.getCurrentConfig();
-    TerminalManager.addLog(`启动任务: ${TaskManager.taskNames[config.task]}`, 'info');
-    let response;
-    console.log("准备发送的完整配置对象:", config)
+    const { task, config } = TaskManager.getCurrentConfig();
 
-    // 调用 FastAPI
+    // 获取当前任务的中文显示名
+    const activeItem = document.querySelector('.sidebar-task__item.active');
+    const displayName = activeItem ? activeItem.dataset.name : task;
+    TerminalManager.addLog(`准备启动任务: ${displayName}`, 'info');
+
+    // 发送给后端的执行参数
+    const payload = {
+      task: task,
+      base: {
+        device: this.deviceName,
+        mode: this.baseMode
+      },
+      config: config
+    };
+
+    console.log("准备发送的配置:", payload);
+
     try {
-      if (config.task==='custom') {
-        // 自定义任务，上传py文件
-        const formData = new FormData();
-        // 附带文本参数（后端用 Form() 接收）
-        formData.append('process', config.process);
-        // 注意：这里假设你在选文件时，把 File 对象存到了 AppState 里
-        const pyFile = TaskManager.currentPyFile; 
-        if (pyFile) {
-          formData.append('file', pyFile); // 'file' 必须和后端参数名一致
-        } else {
-          TerminalManager.addLog('未找到待执行的 Python 文件', 'error');
+      let response;
+      
+      if (task === 'custom') {
+        // 自定义任务上传文件
+        if (!TaskManager.currentPyFile) {
+          TerminalManager.addLog('请先选择一个 Python 脚本文件', 'error');
           return;
         }
+        
+        const formData = new FormData();
+        formData.append('process', payload.process);
+        formData.append('file', TaskManager.currentPyFile);
+        
+        // 注意：后端的 custom 接口可能不需要 base/config，但带上 process 是必须的
         response = await fetch('/start', {
           method: 'POST',
-          body: formData 
+          body: formData
         });
       } else {
+        // 普通任务发送 JSON
         response = await fetch('/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(config)
+          body: JSON.stringify(payload)
         });
+      }
+
+      if (response.ok) {
+        const result = await response.json();
+        TerminalManager.addLog('任务已成功提交至后端执行', 'success');
+      } else {
+        const errText = await response.text();
+        TerminalManager.addLog(`后端返回错误: ${errText}`, 'error');
       }
     } catch (error) {
       TerminalManager.addLog(`任务发送失败: ${error.message}`, 'error');
     }
-  },
-  
-  /**
-   * 停止任务（示例方法） ng：暂无前端对接
-   */
-  async stopTask() {
-    TerminalManager.addLog('正在停止任务...', 'warning');
-    
-    // TODO: 实际实现时，调用 FastAPI
   }
 };
 
