@@ -63,11 +63,11 @@
       font-size: 14px;
       transition: border-color 0.3s;
     }
-    .form-input:focus {
+    .form-home:focus {
       outline: none;
       border-color: #89b4fa;
     }
-    .btn-login {
+    .btn {
       width: 100%;
       padding: 12px;
       background-color: #89b4fa;
@@ -79,10 +79,10 @@
       cursor: pointer;
       transition: background-color 0.3s, transform 0.1s;
     }
-    .btn-login:hover {
+    .btn:hover {
       background-color: #74c7ec;
     }
-    .btn-login:active {
+    .btn:active {
       transform: scale(0.98);
     }
     .refresh-btn {
@@ -125,102 +125,30 @@
       <div class="status-text" id="statusText"></div>
     </div>
 
-    <button class="btn-login" id="loginBtn">登录并启动</button>
-    
+    <div style="display: flex; gap: 12px; width: 100%;">
+      <!-- 设备页按钮 -->
+      <button class="btn" id="loginBtn" style="flex: 1; display: flex; align-items: center; justify-content: center; color: #ffffff;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+          <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        </svg>
+        设备页
+      </button>
+      <!-- 开发页按钮 -->
+      <a class="btn" id="devBtn" style="flex: 1; display: flex; align-items: center; justify-content: center; text-decoration: none; color: #ffffff;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        开发页
+      </a>
+    </div>
+        
     <br>
     <button class="refresh-btn" id="refreshBtn">刷新设备列表</button>
   </div>
 
-  <script>
-    const deviceInput = document.getElementById('deviceInput');
-    const datalist = document.getElementById('adbDevices');
-    const refreshBtn = document.getElementById('refreshBtn');
-    const statusText = document.getElementById('statusText');
-    const loginBtn = document.getElementById('loginBtn');
-
-    // 获取设备的函数
-    async function fetchDevices() {
-      refreshBtn.disabled = true;
-      refreshBtn.textContent = '正在搜索设备...';
-      statusText.textContent = '';
-      
-      try {
-        // 请求后端的 /api/get_devices 接口
-        const response = await fetch('/api/get_devices');
-        if (!response.ok) throw new Error('网络响应错误');
-        
-        const data = await response.json();
-        
-        // 清空旧的选项
-        datalist.innerHTML = '';
-        
-        if (data.devices && data.devices.length > 0) {
-          // 有设备，填充下拉框
-          data.devices.forEach(device => {
-            const option = document.createElement('option');
-            option.value = device;
-            datalist.appendChild(option);
-          });
-          statusText.style.color = '#a6e3a1'; // 绿色提示
-          statusText.textContent = `成功检测到 ${data.devices.length} 个设备`;
-        } else {
-          // 无设备
-          statusText.style.color = '#f38ba8';
-          statusText.textContent = '未检测到已连接的设备';
-        }
-      } catch (error) {
-        console.error('获取设备失败:', error);
-        statusText.style.color = '#f38ba8';
-        statusText.textContent = '获取设备失败，请检查后端是否运行';
-      } finally {
-        refreshBtn.disabled = false;
-        refreshBtn.textContent = '刷新设备列表';
-      }
-    }
-
-    // 页面加载完成时，自动获取一次设备
-    window.addEventListener('DOMContentLoaded', fetchDevices);
-
-    // 绑定刷新按钮
-    refreshBtn.addEventListener('click', fetchDevices);
-
-    // 绑定登录按钮
-    loginBtn.addEventListener('click', async function() {
-      let deviceName = deviceInput.value.trim();
-      // 如果输入框为空
-      if (!deviceName) {
-        const availableDevices = datalist.options;
-        
-        if (availableDevices.length === 1) {
-        // 列表只有 1 个设备，自动使用它
-            deviceName = availableDevices[0].value;
-        } else if (availableDevices.length === 0) {
-            // 没有设备
-            statusText.style.color = '#f38ba8';
-            statusText.textContent = '未检测到设备，请先连接设备或手动输入';
-            return;
-        } else {
-            // 有多个设备，必须手动选择
-            statusText.style.color = '#f38ba8';
-            statusText.textContent = '检测到多个设备，请在下拉列表中选择一个';
-            return;
-        }
-      }
-
-      // 跳转到设备管理页（/home）
-      setTimeout(() => {
-        window.location.href = '/home?device=' + encodeURIComponent(deviceName);
-      }, 100);
-    });
-
-    // 回车键直接登录的也要保持兼容
-    deviceInput.addEventListener('keypress', function(e) {
-    if (e.key === 'Enter' && !loginBtn.disabled) {
-        loginBtn.click();
-    }
-    });
-
-  </script>
+  <script src="/static/js/index/login.js?v={{ time_now }}"></script>
   <script>
     (async function () {
     try {

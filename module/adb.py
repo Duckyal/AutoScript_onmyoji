@@ -45,7 +45,7 @@ class ADB:
         try:
             if adb_tcp == "None":
                 self.d = u2.connect()
-            elif ':' not in adb_tcp:
+            elif ':' not in adb_tcp and adb_tcp.isdigit():
                 self.d = u2.connect(f'127.0.0.1:{adb_tcp}')
             else:
                 self.d = u2.connect(adb_tcp)

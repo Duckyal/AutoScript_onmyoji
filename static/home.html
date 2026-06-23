@@ -24,23 +24,14 @@
       <span class="header__title-separator" id="titleSeparator" style="display: none;"> &gt; </span>
       <span class="header__title-process" id="titleProcess"></span>
     </h1>
-    <div class="header__start-btn" style="background-color: transparent; padding: 0; gap: 10px; border: none; cursor: default;">
-      <!-- 使用 a 标签实现跳转，并保留按钮样式 -->
-      <a class="header__start-btn" href="/dev?device={{device}}">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"></circle>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-        </svg>
-        开发
-      </a>
 
-      <button class="header__start-btn" id="startBtn">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-          <polygon points="5,3 19,12 5,21"></polygon>
-        </svg>
-        执行
-      </button>
-    </div>
+    <button class="header__start-btn" id="startBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+        <polygon points="5,3 19,12 5,21"></polygon>
+      </svg>
+      执行
+    </button>
+    
   </header>
 
   <!-- 主容器 -->
@@ -155,32 +146,32 @@
 
    <!-- 设备校验失败时才渲染，不可关闭，仅提供返回 -->
   {% if not device_ok %}
-  <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0, 0, 0, 0.7); backdrop-filter: blur(6px); display: flex; justify-content: center; align-items: center; z-index: 99999;">
-    <div style="width: 360px; max-width: 90vw; padding: 32px 28px; background: rgba(49, 50, 68, 0.95); border: 1px solid rgba(243, 139, 168, 0.4); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6); text-align: center; color: #cdd6f4; font-family: 'Segoe UI', sans-serif;">
-      <svg style="color: #f38ba8; margin-bottom: 12px;" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-        <line x1="12" y1="9" x2="12" y2="13"></line>
-        <line x1="12" y1="17" x2="12.01" y2="17"></line>
-      </svg>
-      <h3 style="font-size: 20px; color: #f38ba8; margin: 0 0 10px 0; font-weight: 600;">ADB 设备不可用</h3>
-      <p style="font-size: 14px; color: #a6adc8; margin: 0 0 8px 0; word-break: break-all;">设备：{{ device_name }}</p>
-      <p style="font-size: 14px; color: #a6adc8; margin: 0 0 8px 0; word-break: break-all;">原因：{{ device_msg }}</p>
-      <p style="font-size: 12px; color: #6c7086; margin-bottom: 22px;">请确认设备已通过 USB 或网络连接，并返回重新选择</p>
-      <button style="width: 100%; padding: 12px; background-color: #89b4fa; color: #1e1e2e; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer;"
-              onclick="window.location.href='/'">返回设备选择</button>
+    <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0, 0, 0, 0.7); backdrop-filter: blur(6px); display: flex; justify-content: center; align-items: center; z-index: 99999;">
+      <div style="width: 360px; max-width: 90vw; padding: 32px 28px; background: rgba(49, 50, 68, 0.95); border: 1px solid rgba(243, 139, 168, 0.4); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6); text-align: center; color: #cdd6f4; font-family: 'Segoe UI', sans-serif;">
+        <svg style="color: #f38ba8; margin-bottom: 12px; display: block; margin-left: auto; margin-right: auto;" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+          <line x1="12" y1="9" x2="12" y2="13"></line>
+          <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
+        <h3 style="font-size: 20px; color: #f38ba8; margin: 0 0 10px 0; font-weight: 600;">ADB 设备不可用</h3>
+        <p style="font-size: 14px; color: #a6adc8; margin: 0 0 8px 0; word-break: break-all;">设备：{{ device }}</p>
+        <p style="font-size: 14px; color: #a6adc8; margin: 0 0 8px 0; word-break: break-all;">原因：{{ device_msg }}</p>
+        <p style="font-size: 12px; color: #6c7086; margin-bottom: 22px;">请确认设备已通过 USB 或网络连接，并返回重新选择</p>
+        <button style="width: 100%; padding: 12px; background-color: #89b4fa; color: #1e1e2e; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer;"
+                onclick="window.location.href='/'">返回设备选择</button>
+      </div>
     </div>
-  </div>
-  <script>
-    // 阻止 ESC 关闭
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') { e.preventDefault(); }
-    });
-  </script>
+
+    <script>
+        document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { e.preventDefault(); }
+        });
+    </script>
   {% endif %}
 
   <!-- JavaScript 文件 -->
-  <script src="/static/js/task.js?v={{ time_now }}"></script>
-  <script src="/static/js/terminal.js?v={{ time_now }}"></script>
-  <script src="/static/js/app.js?v={{ time_now }}"></script>
+  <script src="/static/js/home/task.js?v={{ time_now }}"></script>
+  <script src="/static/js/home/terminal.js?v={{ time_now }}"></script>
+  <script src="/static/js/home/app.js?v={{ time_now }}"></script>
 </body>
 </html>

@@ -8,7 +8,7 @@ const App = {
   init() {
     // 从 URL 获取设备名
     const params = new URLSearchParams(window.location.search);
-    this.deviceName = params.get('device_name') || '';
+    this.deviceName = params.get('device') || '';
 
     // 初始化模块
     if (typeof TerminalManager !== 'undefined') TerminalManager.init();

@@ -16,7 +16,8 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 async def index(request: Request):
     # 接收 device_name，默认为空字符串
     return Jinja2Templates(directory="static").TemplateResponse("index.html", {
-        "request": request
+        "request": request,
+        "time_now": time.time()
     })
 
 @app.get("/home")
@@ -41,6 +42,7 @@ async def dev(request: Request, device: str):
     # 渲染home页面
     return Jinja2Templates(directory="static").TemplateResponse("dev.html", {
         "request": request,
+        "time_now": time.time(),
         "device": device,
         "device_ok": device_ok,       # adb是否通过校验
         "device_msg": device_msg,     # 未通过时的提示文案
@@ -113,8 +115,6 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from threading import Lock
 import scrcpy
 import cv2
-import numpy as np
-import traceback
 import subprocess
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import Response
@@ -135,55 +135,67 @@ def frame_to_bgr(frame):
 
 
 def start_scrcpy_stream(device_name: str):
-    """启动 Scrcpy 客户端，持续接收视频流"""
+    """启动 Scrcpy 客户端，持续接收视频流（带自动重连）"""
     global current_frame, current_client, current_device
     
     if current_device == device_name and current_client is not None:
-        return # 已经在运行了
+        return
 
-    # 停止旧的连接
     if current_client is not None:
         current_client.stop()
         current_client = None
 
     current_device = device_name
     
-    # 1. 先检查 adb 是否能看到这个设备
+    # ADB 设备检查
     try:
         print(f"正在检查 ADB 设备列表，查找 {device_name}...")
         result = subprocess.run(["adb", "devices"], capture_output=True, text=True, timeout=3)
         print(result.stdout)
         if device_name not in result.stdout:
-            print("警告: adb devices 中未找到该设备！请确认设备已连接且授权。")
+            print("警告: adb devices 中未找到该设备！")
     except Exception as e:
         print("执行 adb devices 失败:", e)
 
-    # 2. 检查 scrcpy 是否在环境变量中
-    try:
-        print("正在检查 scrcpy 环境...")
-        subprocess.run(["scrcpy", "--version"], capture_output=True, text=True, timeout=3)
-    except FileNotFoundError:
-        print("严重错误: 找不到 scrcpy 命令，请确认 scrcpy 已安装并在系统 PATH 中。")
-    except Exception as e:
-        print("scrcpy 环境检查异常:", e)
-
-    try:
-        print(f"尝试启动 Scrcpy 客户端，设备: {device_name}")
-        client = scrcpy.Client(device=device_name)
-        current_client = client
-
+    def stream_worker():
+        """独立线程：负责拉流，断开后自动重连"""
+        global current_frame, current_client
+        
         def on_frame(frame):
             global current_frame
             if frame is not None:
                 with frame_lock:
                     current_frame = frame.copy()
 
-        client.add_listener(scrcpy.EVENT_FRAME, on_frame)
-        client.start(threaded=True)
-        print(f"Scrcpy 视频流已启动，设备: {device_name}")
-    except Exception as e:
-        print(f"启动 Scrcpy 失败: {e}")
-        traceback.print_exc()
+        retry_count = 0
+        while current_device == device_name:
+            try:
+                print(f"启动 Scrcpy (第 {retry_count + 1} 次)，设备: {device_name}")
+                client = scrcpy.Client(
+                    device=device_name,
+                    bitrate=2000000,   # 降低码率到 2Mbps，适合无线传输
+                    max_width=1280,    # 限制分辨率，减少带宽压力
+                )
+                current_client = client
+                client.add_listener(scrcpy.EVENT_FRAME, on_frame)
+                client.start()  # 阻塞运行，断开后会抛异常
+                retry_count = 0  # 正常结束则重置计数
+            except Exception as e:
+                print(f"Scrcpy 流断开: {e}")
+                retry_count += 1
+                if retry_count > 30:
+                    print("重连次数过多，停止尝试。")
+                    break
+                # 递增等待时间，避免疯狂重连
+                wait_time = min(3 * retry_count, 15)
+                print(f"{wait_time} 秒后自动重连...")
+                time.sleep(wait_time)
+
+    # 在独立线程中运行，不阻塞主线程
+    import threading
+    t = threading.Thread(target=stream_worker, daemon=True)
+    t.start()
+    print(f"Scrcpy 视频流线程已启动，设备: {device_name}")
 
 
 def get_current_frame_jpeg():
@@ -249,7 +261,7 @@ async def handle_input(
         return JSONResponse(status_code=500, content={"success": False, "message": str(e)})
 
 
-# ==================== 截图与找图接口 ====================
+# ==================== 截图接口 ====================
 
 @app.post("/api/screenshot")
 async def save_screenshot(
@@ -271,42 +283,6 @@ async def save_screenshot(
             buffer.write(await image.read())
             
         return {"success": True, "message": "截屏成功", "path": filepath}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"success": False, "message": str(e)})
-
-@app.post("/api/search_image")
-async def search_image(device_name: str = Form(...), image: UploadFile = File(...)):
-    """找图：将上传的图与内存里的当前帧进行比对"""
-    with frame_lock:
-        if current_frame is None:
-            return {"success": False, "message": "画面未加载"}
-        frame = current_frame.copy()
-        
-    screen_img = frame_to_bgr(frame)
-
-    try:
-        template_bytes = await image.read()
-        template_img = cv2.imdecode(np.frombuffer(template_bytes, np.uint8), cv2.IMREAD_COLOR)
-        
-        if template_img is None or screen_img is None:
-            return {"success": False, "message": "图片读取失败"}
-            
-        result = cv2.matchTemplate(screen_img, template_img, cv2.TM_CCOEFF_NORMED)
-        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-        
-        threshold = 0.8
-        if max_val >= threshold:
-            h, w = template_img.shape[:2]
-            center_x = max_loc[0] + w // 2
-            center_y = max_loc[1] + h // 2
-            return {
-                "success": True,
-                "coordinates": {"x": center_x, "y": center_y},
-                "confidence": float(max_val)
-            }
-        else:
-            return {"success": False, "message": "未找到匹配的图片", "confidence": float(max_val)}
-            
     except Exception as e:
         return JSONResponse(status_code=500, content={"success": False, "message": str(e)})
 
@@ -404,4 +380,4 @@ async def run_task(request: Request):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
