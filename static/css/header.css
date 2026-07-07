@@ -45,12 +45,6 @@
   white-space: nowrap;
 }
 
-.header__title-separator {
-  color: var(--color-text-muted);
-  font-weight: var(--font-weight-normal);
-  flex-shrink: 0;
-}
-
 .header__title-process {
   color: var(--color-primary);
   font-weight: var(--font-weight-medium);

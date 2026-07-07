@@ -3,9 +3,12 @@
  */
 const App = {
   deviceName: '',
-  baseMode: 'auto', // 由于 HTML 中没有模式选择器，这里默认给 auto
+  startBtn: null, // 保存按钮元素的引用
 
   init() {
+    // 生成任务列表 (必须在其他模块初始化前执行)
+    this.generateTaskList();
+
     // 从 URL 获取设备名
     const params = new URLSearchParams(window.location.search);
     this.deviceName = params.get('device') || '';
@@ -14,73 +17,170 @@ const App = {
     if (typeof TerminalManager !== 'undefined') TerminalManager.init();
     if (typeof TaskManager !== 'undefined') TaskManager.init();
 
+    // 绑定事件
     this.bindEvents();
+    
+    // 启动状态轮询
+    this.startPolling();
+  },
+
+  generateTaskList() {
+    // 自动扫描页面中的任务面板，生成侧边栏列表
+    const taskList = document.getElementById('taskList');
+    const panels = document.querySelectorAll('.task-panel');
+    
+    if (!taskList || panels.length === 0) return;
+
+    taskList.innerHTML = ''; // 清空现有静态内容
+
+    panels.forEach((panel, index) => {
+      // 解析 ID: panel-yuhun -> yuhun
+      const taskId = panel.id.replace('panel-', '');
+      // 读取 data-name，如果没有则用 ID 代替
+      const taskName = panel.dataset.name || taskId;
+
+      // 创建 li 元素
+      const li = document.createElement('li');
+      li.className = 'sidebar-task__item';
+      li.dataset.task = taskId;
+      li.dataset.name = taskName;
+      li.textContent = taskName;
+
+      // 默认激活第一个，并显示第一个面板
+      if (index === 0) {
+        li.classList.add('active');
+        panel.style.display = 'block';
+        // 把任务名初始化到标题栏
+        document.getElementById('taskName').textContent = taskName;
+      } else {
+        panel.style.display = 'none';
+      }
+
+      taskList.appendChild(li);
+    });
   },
 
   bindEvents() {
-    const startBtn = document.getElementById('startBtn');
-    if (startBtn) {
-      startBtn.addEventListener('click', () => this.startTask());
+    // 获取按钮并保存引用
+    this.startBtn = document.getElementById('startBtn');
+    if (this.startBtn) {
+      this.startBtn.addEventListener('click', () => {
+        // 智能判断：看按钮文字是“执行”还是“终止”
+        if (this.startBtn.textContent.includes('终止')) {
+          this.stopTask();
+        } else {
+          this.startTask();
+        }
+      });
     }
   },
 
+  // ================= 业务逻辑区 =================
+  // 启动任务 
   async startTask() {
     const { task, config } = TaskManager.getCurrentConfig();
 
-    // 获取当前任务的中文显示名
     const activeItem = document.querySelector('.sidebar-task__item.active');
     const displayName = activeItem ? activeItem.dataset.name : task;
-    TerminalManager.addLog(`准备启动任务: ${displayName}`, 'info');
+    
+    if (typeof TerminalManager !== 'undefined') {
+        TerminalManager.addLog(`准备启动任务: ${displayName}`, 'info');
+    }
 
-    // 发送给后端的执行参数
     const payload = {
       task: task,
-      base: {
-        device: this.deviceName,
-        mode: this.baseMode
-      },
+      device: this.deviceName,
       config: config
     };
 
-    console.log("准备发送的配置:", payload);
-
     try {
-      let response;
-      
-      if (task === 'custom') {
-        // 自定义任务上传文件
-        if (!TaskManager.currentPyFile) {
-          TerminalManager.addLog('请先选择一个 Python 脚本文件', 'error');
-          return;
-        }
-        
-        const formData = new FormData();
-        formData.append('process', payload.process);
-        formData.append('file', TaskManager.currentPyFile);
-        
-        // 注意：后端的 custom 接口可能不需要 base/config，但带上 process 是必须的
-        response = await fetch('/start', {
-          method: 'POST',
-          body: formData
-        });
-      } else {
-        // 普通任务发送 JSON
-        response = await fetch('/start', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      }
+      const response = await fetch('/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
 
       if (response.ok) {
         const result = await response.json();
-        TerminalManager.addLog('任务已成功提交至后端执行', 'success');
+        if (typeof TerminalManager !== 'undefined') {
+            TerminalManager.addLog('任务已成功提交至后端执行', 'success');
+        }
       } else {
         const errText = await response.text();
-        TerminalManager.addLog(`后端返回错误: ${errText}`, 'error');
+        if (typeof TerminalManager !== 'undefined') {
+            TerminalManager.addLog(`后端返回错误: ${errText}`, 'error');
+        }
       }
     } catch (error) {
-      TerminalManager.addLog(`任务发送失败: ${error.message}`, 'error');
+        if (typeof TerminalManager !== 'undefined') {
+            TerminalManager.addLog(`任务发送失败: ${error.message}`, 'error');
+        }
+    }
+  },
+
+  // 停止任务逻辑
+  async stopTask() {
+    if(!confirm("确定要停止当前任务吗？")) return;
+
+    try {
+      const response = await fetch('/api/stop_task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device: this.deviceName })
+      });
+
+      const data = await response.json();
+      if(data.success) {
+        this.checkTaskStatus(); // 立即刷新状态
+      }
+    } catch (error) {
+      alert('停止请求失败');
+    }
+  },
+
+  // ================= 状态轮询区 =================
+
+  // 启动轮询
+  startPolling() {
+    this.checkTaskStatus(); // 立即执行一次
+    setInterval(() => {
+      this.checkTaskStatus();
+    }, 2000); // 每 2 秒轮询
+  },
+
+  // 查询状态
+  async checkTaskStatus() {
+    if (!this.deviceName) return;
+
+    try {
+      const res = await fetch(`/api/task_status?device=${encodeURIComponent(this.deviceName)}`);
+      const data = await res.json();
+      this.updateActionButton(data.running, data.task_name);
+    } catch (err) {
+      console.error("状态查询失败", err);
+    }
+  },
+
+  // 更新按钮 UI
+  updateActionButton(isRunning, taskName) {
+    if (!this.startBtn) return;
+
+    if (isRunning) {
+      // --- 状态：正在运行 ---
+      this.startBtn.textContent = "终止任务";
+      this.startBtn.style.backgroundColor = "#dc3545"; // 红色
+      this.startBtn.style.color = "#fff";
+      this.startBtn.style.borderColor = "#dc3545";
+      
+      // 如果需要显示任务名：
+      // if(taskName) this.startBtn.textContent += ` (${taskName})`;
+
+    } else {
+      // --- 状态：空闲 ---
+      this.startBtn.textContent = "执行脚本";
+      this.startBtn.style.backgroundColor = ""; // 恢复 CSS 默认
+      this.startBtn.style.color = "";
+      this.startBtn.style.borderColor = "";
     }
   }
 };

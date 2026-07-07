@@ -228,12 +228,31 @@
 
         <div class="upload-area" style="margin-bottom: 12px;">
           <label style="font-size:14px;color:#6b7280;display:block;margin-bottom:8px;">框选区域预览：</label>
-          <img id="crop-preview" src="" alt="请在左侧画面框选" style="display:none; max-width:100%; max-height:120px; border-radius:4px; border: 1px solid #e5e7eb;">
+          <img id="crop-preview" src="" alt="请在左侧框选或下方选择图片" style="display:none; max-width:100%; max-height:120px; border-radius:4px; border: 1px solid #e5e7eb;">
+        </div>
+        <!-- 新增：上传按钮 -->
+        <button id="upload-btn" class="btn" style="width: 100%; margin-bottom: 12px; font-size: 12px; padding: 6px; background-color: #f3f4f6; color: #374151; border: 1px solid #d1d5db;">📂 上传本地图片</button>
+        <input type="file" id="file-input" hidden accept="image/*"><!-- 新增：上传按钮 -->
+
+        <button class="btn" id="save-btn">保存</button>
+
+        <!-- ============ 新增部分：图像识别 ============ -->
+        <div style="margin-top: 20px; border-top: 1px solid #e5e7eb; padding-top: 15px;">
+          <h3 style="font-size: 16px; margin-bottom: 10px;">辅助功能</h3>
+          
+          <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+            <button id="btn-find-image" class="btn" style="flex: 1; background-color: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe;">找图</button>
+            <button id="btn-find-text" class="btn" style="flex: 1; background-color: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe;">找字 (OCR)</button>
+          </div>
+          
+          <div>
+            <label style="font-size:14px; color:#6b7280; display:block; margin-bottom:5px;">识别结果返回值：</label>
+            <textarea id="recognition-result" rows="4" placeholder="等待操作..." readonly 
+                style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; background-color: #f9fafb; font-family: monospace; font-size: 12px; color: #374151; resize: vertical; box-sizing: border-box;"></textarea>
+          </div>
         </div>
 
-        <button class="btn" id="save-btn">添加并保存</button>
       </div>
-
     </div>
   </div>
   

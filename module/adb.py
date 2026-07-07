@@ -1,7 +1,7 @@
 import uiautomator2 as u2
 from rapidocr import RapidOCR
 from module.decorators import *
-from module.log import WebSocketLogManager
+from module.logmanager import ws_manager
 
 import cv2
 import numpy as np
@@ -17,9 +17,9 @@ class ADB:
     # 用字典代替单一的 _instance，key 是传入的参数，value 是对应的实例
     _instances = {}
 
-    def __new__(cls, adb_tcp: str = "None", mode: str = "less", max_workers=4, source: str = "server"):
+    def __new__(cls, devices_id: str = "None", mode: str = "less", max_workers=4, source: str = "server"):
         # 把传入的参数变成一个可哈希的 key（比如元组）
-        cache_key = (adb_tcp or "None", mode, max_workers, source)
+        cache_key = (devices_id or "None", mode, max_workers, source)
         
         # 如果这个参数组合没被实例化过，就新建一个
         if cache_key not in cls._instances:
@@ -27,14 +27,15 @@ class ADB:
         # 返回这个参数对应的唯一实例
         return cls._instances[cache_key]
 
-    def __init__(self, adb_tcp: str = "None", mode: str = "less", max_workers=4, source: str = "server"):
+    def __init__(self, devices_id: str = "None", mode: str = "less", max_workers=4, source: str = "server"):
         # 由于 Python 机制，每次 return 缓存实例时，都会强制调用 __init__
         # 所以必须加一个标记，防止同一个实例被重复初始化
         if getattr(self, "_is_initialized", False):
             return
-            
+        
+        self.devices_id = devices_id
         self.mode = mode
-        self.log_manager = WebSocketLogManager(source)
+        self.log_manager = ws_manager
         self.bz = bezierTrajectory()
 
         self.max_workers = max_workers  
@@ -43,12 +44,12 @@ class ADB:
         self.executor = ThreadPoolExecutor(max_workers=self.max_workers) # 复用线程池，避免高频创建销毁
         
         try:
-            if adb_tcp == "None":
+            if devices_id == "None":
                 self.d = u2.connect()
-            elif ':' not in adb_tcp and adb_tcp.isdigit():
-                self.d = u2.connect(f'127.0.0.1:{adb_tcp}')
+            elif ':' not in devices_id and devices_id.isdigit():
+                self.d = u2.connect(f'127.0.0.1:{devices_id}')
             else:
-                self.d = u2.connect(adb_tcp)
+                self.d = u2.connect(devices_id)
                 
             self.engine = RapidOCR()
             # 标记当前这个实例已经初始化完毕
@@ -56,9 +57,9 @@ class ADB:
         except Exception as e:
             self.log(f'设备初始化失败, 请检查设备是否连接。原始错误: {e}', "error")
             # 从缓存字典里删掉这个失败的实例
-            cache_key = (adb_tcp or "None", mode, source)
+            cache_key = (devices_id or "None", mode, source)
             ADB._instances.pop(cache_key, None)
-            raise Exception(f"设备 {adb_tcp} 初始化失败") 
+            raise Exception(f"设备 {devices_id} 初始化失败") 
 
         # 获取并更新设备分辨率(竖屏状态)
         w, h = self.d.window_size()
@@ -68,13 +69,30 @@ class ADB:
         if self.mode == "more":
             self.log(f'设备初始化完成: 宽:{self.width}, 高:{self.height}')
 
+    # 封装module/decorators.py里中断函数的方法
+    def sleep(self, seconds: float):
+        """
+        可中断的睡眠函数，支持在睡眠过程中被外部中断。
+        :param seconds: 需要睡眠的秒数
+        """
+        interruptible_sleep(seconds, self)
+
+    def check_stop(self):
+        """
+        检查是否需要中断当前任务，如果需要则抛出异常。
+        """
+        check_stop(self)
+
+    # 封装module/logmanager.py里日志函数的方法
     def log(self, message: str, level: str = "info"):
         """
         专用的日志函数，会同时输出到本地终端 + 推送到前端 WebSocket
         - message: 日志内容
         - level: info / success / warning / error
         """
-        self.log_manager.log(message, level)
+        # 调用 ws_manager
+        if self.log_manager:
+            self.log_manager.log(message, level, self.devices_id)
 
     # ============================================================================================
     # ============================================================================================
@@ -110,11 +128,8 @@ class ADB:
     def adb_shell(self, shell:str):
         self.adb命令行(shell)
     
-    def color_match(self, match_img:str, pos:tuple, color_threshold:int=30):
-        return self.比色(match_img, pos, color_threshold)
-    
-    def image_preloading(self, image_paths: list):
-        self.图片预加载(image_paths)
+    def image_preloading(self, *image_paths):
+        self.图片预加载(*image_paths)
     
     def find_image(self, sim=0.95, x1:int=-1, y1:int=-1, x2:int=-1, y2:int=-1):
         return self.找图(sim, x1, y1, x2, y2)
@@ -178,22 +193,6 @@ class ADB:
         self.d.click(X, Y)
         if self.mode == "more":
             self.log('快速点击{0} {1}'.format(X, Y))
-              
-    """def 点击(self, x:int, y:int, loc:int, *els):
-        '''
-        x,y:点击中心坐标
-        loc:点击位置的随机范围，建议取正态分布生成半径(即loc**0.5)，
-        els:处理其他无效参数
-        '''
-        # x,y应为左上角坐标
-        mouse = np.random.normal(loc, int(loc**0.5), 2)
-        X, Y = int(mouse[0]+x), int(mouse[1]+y)
-        # self.d.click(X, Y)
-        self.d.touch.down(X, Y)
-        time.sleep(np.random.uniform(0, 0.4))
-        self.d.touch.up(X, Y)
-        if self.mode == "more":
-            self.log('模拟点击{0} {1}'.format(X, Y))"""
     
     def 点击(self, center_x: int, center_y: int, loc: int, *els):
         '''
@@ -256,47 +255,23 @@ class ADB:
         os.system(shell)
         if self.mode == "more":
             self.log('执行命令行:{0}'.format(shell))
-    
-    #@Loop()
-    def 比色(self, match_img:str, pos:tuple=(), color_threshold:int=30):
-        sub_image = cv2.imread(match_img)
-        sub_image_size = sub_image.shape[:2] # type: ignore
-        if pos == ():
-            # 寻找match_img位置
-            _result = self._match_single_task(cv2.cvtColor(self.获取截图(), cv2.COLOR_BGR2GRAY), sub_image, 0.9, os.path.basename(match_img), sub_image_size)[1] # type: ignore
-            x1, y1, w, h = _result[0], _result[1], _result[3], _result[4]
-            x2, y2 = x1+w, y1+h
-        elif isinstance(pos, tuple):
-            x1, y1, w, h = pos
-            x2, y2 = x1+w, y1+h
-        else:
-            raise ValueError('match_img并非路径或元组')
-        # 提取矩形区域
-        rect_area = w * h
-        roi = self.获取截图(x1,y1,x2,y2)
-        
-        # 简单地取平均颜色作为主要颜色
-        main_color_roi = np.mean(roi, axis=(0, 1)).astype(int) # type: ignore
-        main_color_sub = np.mean(sub_image, axis=(0, 1)).astype(int) # type: ignore
-        # 计算颜色差值
-        diff = np.sum(np.abs(main_color_roi - main_color_sub))
-        if self.mode == "more":
-            self.log('{0}匹配结果:{1}'.format(os.path.basename(match_img), diff))
-        return diff < color_threshold
-    
 
-    def 图片预加载(self, image_paths: list):
+    def 图片预加载(self, *image_paths):
         '''
         在进入 while 循环前，一次性把所有图片读入内存并转为灰度图。
         避免在 while 循环中频繁进行磁盘 I/O 和色彩空间转换。
+        
+        调用方式：
+            self.op.图片预加载('path1.png', 'path2.png', 'path3.png')
         '''
         self._clear_cache() # 预加载前先清理缓存，避免旧图干扰新图
         for path in image_paths:
-            if not os.path.exists(path):
+            check_stop(self) # 注意：这里用的是全局 check_stop，如果你刚才把方法封装进 ADB 类了，记得改成 self.check_stop()
+            if not os.path.exists(path): # type: ignore
                 continue
-            img_name = os.path.basename(path)
+            img_name = os.path.basename(path) # type: ignore
             # 直接以灰度图读入内存
-            gray_img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+            gray_img = cv2.imread(path, cv2.IMREAD_GRAYSCALE) # type: ignore
             if gray_img is not None:
                 # 缓存 灰度图矩阵、高度、宽度
                 self.cached_templates[img_name] = {
@@ -304,6 +279,7 @@ class ADB:
                     'h': gray_img.shape[0],
                     'w': gray_img.shape[1]
                 }
+        
         self.log(f"成功预加载了 {len(self.cached_templates)} 张模板图片。")
         self._adapt_resolution() # 预加载后立即适配一次分辨率，锁定缩放比，提升后续找图效率
 
@@ -381,7 +357,6 @@ class ADB:
         h_main, w_main = main_gray.shape[:2]
 
         # 生成精准的缩放比例队列（从 0.5 到 1.8，步长 0.02）
-        # 手机画面适配基本不可能超出这个范围
         raw_scales = np.arange(0.5, 1.81, 0.02)
         
         # 极其粗暴且有效的排序：按距离 1.0 的远近升序排序！
@@ -392,7 +367,7 @@ class ADB:
         global_best_scale = 1.0
         success_img_name = None
 
-        # 4. 开始轮询
+        # 轮询
         for img_name in test_queue:
             temp = self.cached_templates[img_name]
             w_sub, h_sub = temp['w'], temp['h']
@@ -401,6 +376,7 @@ class ADB:
             local_best_scale = 1.0
             
             for scale in scales:
+                check_stop(self)  # 检查是否需要中断
                 # 计算缩放后的目标尺寸
                 w_resized = int(w_sub * scale)
                 h_resized = int(h_sub * scale)
@@ -436,7 +412,6 @@ class ADB:
             if global_best_val >= sim:
                 break
 
-        # 5. 最终结果判定
         if global_best_val >= sim:
             self.current_scale = global_best_scale
             self.log(f"[适配成功] 已锁定当前手机缩放比为: {global_best_scale:.4f}，成功匹配图: {success_img_name} (相似度: {global_best_val:.2f})")
@@ -470,8 +445,8 @@ class ADB:
                 img_name, value = result
                 output[img_name] = value
 
-        if self.mode == "more":
-            self.log(output) # type: ignore
+        if self.mode == "more" and output:
+            self.log(str(output))
 
         return output
     
@@ -511,7 +486,7 @@ class ADB:
                 # 写入返回字典
                 result_dict[word] = (abs_x1, abs_y1, r)
 
-            if self.mode == "more":
+            if self.mode == "more" and result_dict:
                 self.log(str(result_dict))
 
             if target_txt == '':

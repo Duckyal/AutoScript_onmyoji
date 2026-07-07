@@ -1,12 +1,10 @@
-import asyncio
 from module.adb import ADB
 
-class YuhunTask:
+class Task_yuhun:
     def __init__(self, device:ADB, config:dict):
-        self.device = device
+        self.op = device
         self.config = config
-        asyncio.run(self.run())
     
-    async def run(self):
-        self.device.log(f"Running Yuhun Task with config: {self.config}")
-        self.device.找字()
+    def run(self):
+        self.op.log(f"Running Yuhun Task with config: {self.config}")
+        self.op.找字()

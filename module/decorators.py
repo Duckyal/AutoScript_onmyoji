@@ -33,6 +33,63 @@ class RaiseError(Exception):
     '''自定义异常类，用于在装饰器中抛出特定错误'''
     pass
 
+class TaskStoppedException(Exception):
+    """任务停止信号异常"""
+    pass
+
+# =============================================================================================
+# =============================================================================================
+import threading
+
+# 全局停止信号字典：{ device_id: threading.Event }
+_stop_signals = {}
+
+def register_stop_signal(device_id: str):
+    """注册停止信号"""
+    _stop_signals[device_id] = threading.Event()
+
+def trigger_stop_signal(device_id: str):
+    """触发停止信号"""
+    if device_id in _stop_signals:
+        _stop_signals[device_id].set()
+        return True
+    return False
+
+def cleanup_stop_signal(device_id: str):
+    """清理停止信号"""
+    _stop_signals.pop(device_id, None)
+    
+def check_stop(obj):
+    """
+    检查是否需要停止
+    在任何耗时长的地方（循环里、sleep前）都可以调用这个
+    
+    用法：
+        def run(self):
+            for i in range(100):
+                check_stop(self)  # 关键点检查
+                do_something()
+    """
+    device_id = getattr(obj, 'device_id', None)
+    if device_id and device_id in _stop_signals:
+        if _stop_signals[device_id].is_set():
+            raise TaskStoppedException("任务被终止")
+
+# 可中断的 sleep
+def interruptible_sleep(seconds: float, obj=None):
+    """
+    可中断的 sleep，每0.1秒检查一次停止信号
+    
+    用法：
+        interruptible_sleep(5, self)  # 替代 time.sleep(5)
+    """
+    import time
+    end_time = time.time() + seconds
+    
+    while time.time() < end_time:
+        if obj:
+            check_stop(obj)
+        time.sleep(0.1)  # 每次只睡0.1秒，检查更及时
 
 # =============================================================================================
 # =============================================================================================

@@ -79,6 +79,13 @@
   color: var(--color-success);
 }
 
+/* 日志来源标识 */
+.terminal__device {
+    color: #ff9f43; /* 橙色 */
+    font-weight: bold;
+    margin-right: 5px;
+}
+
 /* 时间戳样式 */
 .terminal__timestamp {
   color: #64748b;

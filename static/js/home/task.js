@@ -4,7 +4,6 @@
  */
 const TaskManager = {
   currentTask: 'yuhun',
-  currentPyFile: null,
 
   init() {
     // 自动获取初始任务名 (从 HTML 的 active 类获取)
@@ -16,6 +15,7 @@ const TaskManager = {
   },
 
   bindEvents() {
+    // 绑定执行按钮活动
     const taskList = document.getElementById('taskList');
     if (taskList) {
       taskList.addEventListener('click', (e) => {
@@ -25,36 +25,17 @@ const TaskManager = {
         }
       });
     }
-
-    // 处理自定义脚本文件选择
-    const selectFileBtn = document.getElementById('selectFileBtn');
-    if (selectFileBtn) {
-      const fileInput = document.createElement('input');
-      fileInput.type = 'file';
-      fileInput.accept = '.py';
-      fileInput.style.display = 'none';
-      document.body.appendChild(fileInput);
-
-      selectFileBtn.addEventListener('click', () => fileInput.click());
-      fileInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
-          this.currentPyFile = e.target.files[0];
-          const fileNameEl = document.getElementById('fileName');
-          if (fileNameEl) {
-            fileNameEl.textContent = `已选择: ${this.currentPyFile.name}`;
-          }
-        }
-      });
-    }
   },
 
   switchTask(taskName, displayName) {
     this.currentTask = taskName;
     
+    // 更新侧边栏激活状态
     document.querySelectorAll('.sidebar-task__item').forEach(item => {
       item.classList.toggle('active', item.dataset.task === taskName);
     });
 
+    // 切换面板显示
     document.querySelectorAll('.task-panel').forEach(panel => {
       panel.style.display = 'none';
     });
@@ -64,19 +45,18 @@ const TaskManager = {
       activePanel.style.display = 'block';
     }
 
+    // 更新顶部标题
     if (displayName) {
-      const titleProcessEl = document.getElementById('titleProcess');
-      const separatorEl = document.getElementById('titleSeparator');
-      if (titleProcessEl && separatorEl) {
-        titleProcessEl.textContent = displayName;
-        separatorEl.style.display = 'inline';
+      const taskNameEl = document.getElementById('taskName');
+      if (taskNameEl) {
+        taskNameEl.textContent = displayName;
       }
     }
   },
 
   /**
    * 自动收集当前任务配置
-   * 找到当前显示的 panel，把里面带 name 的元素全抓出来
+   * 找到当前显示的 panel，把里面带 name 的元素全抓出来打包成json给执行方法调用
    */
   getCurrentConfig() {
     const config = {};

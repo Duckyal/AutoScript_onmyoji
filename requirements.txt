@@ -25,5 +25,7 @@ uvicorn[standard]
 python-multipart
 
 # scrcpy 用于开发控制台
-av
-scrcpy-client --no-deps
+scrcpy-client
+
+# index.html 爬取壁纸所需库
+requests
