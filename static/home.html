@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AutoScript - 主页</title>
   <!-- 网页图标 -->
-  <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+  <link rel="icon" href="favicon.ico" type="image/x-icon">
   <!-- CSS 文件 -->
-  <link rel="stylesheet" href="/static/css/variables.css">
-  <link rel="stylesheet" href="/static/css/reset.css">
-  <link rel="stylesheet" href="/static/css/layout.css">
-  <link rel="stylesheet" href="/static/css/header.css">
-  <link rel="stylesheet" href="/static/css/sidebar-task.css">
-  <link rel="stylesheet" href="/static/css/content.css">
-  <link rel="stylesheet" href="/static/css/terminal.css">
-  <link rel="stylesheet" href="/static/css/form.css">
+  <link rel="stylesheet" href="css/variables.css">
+  <link rel="stylesheet" href="css/reset.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/header.css">
+  <link rel="stylesheet" href="css/sidebar-task.css">
+  <link rel="stylesheet" href="css/content.css">
+  <link rel="stylesheet" href="css/terminal.css">
+  <link rel="stylesheet" href="css/form.css">
 </head>
 <body>
   <!-- 顶部标题栏 -->
@@ -84,6 +84,13 @@
               <label class="form-label" for="yuhun-shikigami">式神选择</label>
               <input class="form-input" type="text" id="yuhun-shikigami" name="shikigami" placeholder="输入式神名称">
             </div>
+            <div class="form-group">  
+              <label class="form-label" for="log-mode">更多日志</label>
+              <select class="form-select" id="log-mode" name="mode">
+                <option value="less">否</option>
+                <option value="more">是</option>
+              </select>
+            </div>
           </div>
 
           <!-- 斗技配置 -->
@@ -97,11 +104,18 @@
                 <option value="point">荣誉点满</option>
               </select>
             </div>
+            <div class="form-group">  
+              <label class="form-label" for="log-mode">更多日志</label>
+              <select class="form-select" id="log-mode" name="mode">
+                <option value="less">否</option>
+                <option value="more">是</option>
+              </select>
+            </div>
           </div>
 
           <!-- 突破配置 -->
           <div class="task-panel" id="panel-tupo" style="display: none;" data-name="突破">
-            <h3 class="task-panel__title">英杰配置</h3>
+            <h3 class="task-panel__title">突破配置</h3>
             <div class="form-group">
               <label class="form-label" for="tupo-type">突破类型</label>
               <select class="form-select" id="tupo-type" name="type">
@@ -118,6 +132,13 @@
               <select class="form-select" id="tupo-refresh" name="refresh">
                 <option value="yes">是</option>
                 <option value="no">否</option>
+              </select>
+            </div>
+            <div class="form-group">  
+              <label class="form-label" for="log-mode">更多日志</label>
+              <select class="form-select" id="log-mode" name="mode">
+                <option value="less">否</option>
+                <option value="more">是</option>
               </select>
             </div>
           </div>
@@ -205,8 +226,8 @@
   {% endif %}
    
   <!-- JavaScript 文件 -->
-  <script src="/static/js/home/task.js?v={{ time_now }}"></script>
-  <script src="/static/js/home/terminal.js?v={{ time_now }}"></script>
-  <script src="/static/js/home/app.js?v={{ time_now }}"></script>
+  <script src="js/home/task.js"></script>
+  <script src="js/home/terminal.js"></script>
+  <script src="js/home/app.js"></script>
 </body>
 </html>
