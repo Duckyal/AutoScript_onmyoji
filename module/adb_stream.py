@@ -130,19 +130,11 @@ class StreamManager:
                     
                     client = scrcpy.Client(
                         device=device_name,
-                        
-                        # --- 画质核心（为了识别准确） ---
-                        max_width=1280,
-                        bitrate=4000000,
+                        max_width=0,           # 0 = 不限制，使用设备原始分辨率，确保坐标一致
+                        bitrate=8000000,
                         max_fps=60,            
-                        
-                        # --- 稳定性核心（兼容各种环境） ---
-                        encoder_name=None,     # 【关键】必须为 None，让系统自动选。不同芯片（高通/联发科/虚拟机）的编码器名字都不一样，指定了反而会报错。
-                        connection_timeout=20000, # 设为 20 秒。虚拟机或无线启动有时很慢，太短会导致连接超时。
-                        
-                        # --- 逻辑核心（防止脚本跑飞） ---
+                        connection_timeout=10000, # 设为 10 秒。虚拟机或无线启动有时很慢，太短会导致连接超时。
                         stay_awake=True,       # 必须常亮。
-                        lock_screen_orientation=0, # 这里的 0 是初始方向。建议你的脚本逻辑里通过 adb shell 强制固定旋转，或者在代码里明确指定 1(横) 或 2(竖)。
                     )
                     self.current_client = client
                     client.add_listener(scrcpy.EVENT_FRAME, self._on_frame)

@@ -11,15 +11,15 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 
-class ADB:
+class ADB():
     adb_path = os.path.dirname(__file__)   # 取文件所在文件夹绝对路径
     
     # 用字典代替单一的 _instance，key 是传入的参数，value 是对应的实例
     _instances = {}
 
-    def __new__(cls, devices_id: str = "None", mode: str = "less", max_workers=4, source: str = "server"):
+    def __new__(cls, devices_id: str, mode: str = "less", max_workers=4, source: str = "server"):
         # 把传入的参数变成一个可哈希的 key（比如元组）
-        cache_key = (devices_id or "None", mode, max_workers, source)
+        cache_key = (devices_id, mode, max_workers, source)
         
         # 如果这个参数组合没被实例化过，就新建一个
         if cache_key not in cls._instances:
@@ -27,7 +27,7 @@ class ADB:
         # 返回这个参数对应的唯一实例
         return cls._instances[cache_key]
 
-    def __init__(self, devices_id: str = "None", mode: str = "less", max_workers=4, source: str = "server"):
+    def __init__(self, devices_id: str, mode: str = "less", max_workers=4, source: str = "server"):
         # 由于 Python 机制，每次 return 缓存实例时，都会强制调用 __init__
         # 所以必须加一个标记，防止同一个实例被重复初始化
         if getattr(self, "_is_initialized", False):
@@ -134,8 +134,8 @@ class ADB:
     def find_image(self, sim=0.95, x1:int=-1, y1:int=-1, x2:int=-1, y2:int=-1):
         return self.找图(sim, x1, y1, x2, y2)
     
-    def find_text(self, x1:int, y1:int, x2:int, y2:int, target_txt:str=''):
-        return self.找字(x1, y1, x2, y2, target_txt)
+    def find_text(self, x1:int, y1:int, x2:int, y2:int, target_txt:str='', Specified_image=None):
+        return self.找字(x1, y1, x2, y2, target_txt, Specified_image)
     
 
     # ============================================================================================
@@ -183,16 +183,15 @@ class ADB:
             return img
         
                      
-    def 简单点击(self, x:int, y:int, r, *els):
+    def 简单点击(self, x:int, y:int, *els):
         '''
         x,y:点击中心坐标
-        r:偏移值(一般取图片平均半径)
         els:处理其他无效参数
         '''
-        X, Y = x+r, y+r
+        X, Y = x, y
         self.d.click(X, Y)
         if self.mode == "more":
-            self.log('快速点击{0} {1}'.format(X, Y))
+            self.log('简单点击{0} {1}'.format(X, Y))
     
     def 点击(self, center_x: int, center_y: int, loc: int, *els):
         '''
@@ -252,26 +251,68 @@ class ADB:
             self.log('模拟输入{0}'.format(txt))
         
     def adb命令行(self, shell:str):
+        '''
+        执行命令行：在adb shell中执行
+        示例：input tap 100 100
+        '''
+        shell = f"adb -s {self.devices_id} shell {shell}"
         os.system(shell)
         if self.mode == "more":
             self.log('执行命令行:{0}'.format(shell))
 
-    def 图片预加载(self, *image_paths):
+    def 图片预加载(self, *images):
         '''
         在进入 while 循环前，一次性把所有图片读入内存并转为灰度图。
         避免在 while 循环中频繁进行磁盘 I/O 和色彩空间转换。
         
         调用方式：
-            self.op.图片预加载('path1.png', 'path2.png', 'path3.png')
+            self.op.图片预加载(图片1, 图片2, 图片3, ...)
+
+        支持类型：
+            1. 图片路径字符串
+            2. cv2 数组
+            3. PIL 图片对象
         '''
         self._clear_cache() # 预加载前先清理缓存，避免旧图干扰新图
-        for path in image_paths:
-            check_stop(self) # 注意：这里用的是全局 check_stop，如果你刚才把方法封装进 ADB 类了，记得改成 self.check_stop()
-            if not os.path.exists(path): # type: ignore
-                continue
-            img_name = os.path.basename(path) # type: ignore
-            # 直接以灰度图读入内存
-            gray_img = cv2.imread(path, cv2.IMREAD_GRAYSCALE) # type: ignore
+        for img in images:
+            check_stop(self)
+            if isinstance(img, str):
+                if not os.path.exists(img):
+                    continue
+                img_name = os.path.basename(img)
+                gray_img = cv2.imread(img, cv2.IMREAD_GRAYSCALE)
+            elif isinstance(img, bytes):
+                img_name = "uploaded_image"
+                img_array = np.frombuffer(img, np.uint8)
+                color_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                if color_img is not None:
+                    gray_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
+                else:
+                    gray_img = None
+            elif isinstance(img, np.ndarray):
+                img_name = "cv2_array"
+                if len(img.shape) == 2:
+                    gray_img = img
+                else:
+                    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            elif hasattr(img, 'read'):
+                img_name = img.filename or "uploaded_image"
+                img_bytes = img.read()
+                img_array = np.frombuffer(img_bytes, np.uint8)
+                color_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                if color_img is not None:
+                    gray_img = cv2.cvtColor(img_array, cv2.COLOR_BGR2GRAY)
+                else:
+                    gray_img = None
+            elif hasattr(img, 'tobytes'):
+                img_name = "pil_image"
+                img_array = np.array(img)
+                if len(img_array.shape) == 2:
+                    gray_img = img_array
+                elif img_array.shape[2] == 4:
+                    gray_img = cv2.cvtColor(img_array, cv2.COLOR_RGBA2GRAY)
+                else:
+                    gray_img = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
             if gray_img is not None:
                 # 缓存 灰度图矩阵、高度、宽度
                 self.cached_templates[img_name] = {
@@ -450,12 +491,24 @@ class ADB:
 
         return output
     
-    def 找字(self, x1: int = -1, y1: int = -1, x2: int = -1, y2: int = -1, target_txt: str = ''):
+    def 找字(self, x1: int = -1, y1: int = -1, x2: int = -1, y2: int = -1, target_txt: str = '', Specified_image=None):
         '''
         x1, y1, x2, y2: 截图区域坐标，默认为 -1 表示全屏
         target_txt: 目标文本（如果不提供则返回所有文本框信息）
+        Specified_image: 指定图片（如果不提供则使用当前截图）
         '''
-        crop_img = self.获取截图(x1, y1, x2, y2)
+        if Specified_image:
+            if isinstance(Specified_image, bytes):
+                img_array = np.frombuffer(Specified_image, np.uint8)
+                crop_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+            elif isinstance(Specified_image, np.ndarray):
+                crop_img = Specified_image
+            elif hasattr(Specified_image, 'tobytes'):
+                crop_img = cv2.cvtColor(np.array(Specified_image), cv2.COLOR_RGB2BGR)
+            else:
+                crop_img = Specified_image
+        else:
+            crop_img = self.获取截图(x1, y1, x2, y2)
         result = self.engine(crop_img, use_det=True, use_cls=True, use_rec=True) # type: ignore
         
         # 兜底：如果 RapidOCR 完全没有识别到任何东西
@@ -492,7 +545,7 @@ class ADB:
             if target_txt == '':
                 return result_dict
             else:
-                return result_dict.get(target_txt)
+                return result_dict.get(target_txt, None)
                 
         except Exception as e:
             self.log(f"文本识别逻辑处理出错: {e}")

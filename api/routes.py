@@ -4,8 +4,7 @@ from fastapi.responses import StreamingResponse, JSONResponse, Response
 import asyncio
 import time
 import os
-import tkinter as tk
-from tkinter import filedialog
+import platformdirs
 
 router = APIRouter()
 
@@ -24,6 +23,28 @@ async def api_get_devices():
 def get_stream_status():
     """返回当前视频流的连接状态"""
     return JSONResponse(content=adb_stream.stream_manager.get_status())
+
+@router.get("/api/device_resolution")
+def get_device_resolution(device_name: str):
+    """获取设备的物理分辨率"""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["adb", "-s", device_name, "shell", "wm", "size"],
+            capture_output=True, text=True, timeout=2
+        )
+        output = result.stdout.strip()
+        if 'Physical size:' in output:
+            size_str = output.split('Physical size:')[1].strip()
+            w, h = map(int, size_str.split('x'))
+            return {"success": True, "width": w, "height": h}
+        elif 'size:' in output:
+            size_str = output.split('size:')[1].strip()
+            w, h = map(int, size_str.split('x'))
+            return {"success": True, "width": w, "height": h}
+        return {"success": False, "message": "无法获取分辨率"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
 @router.get("/api/start_stream")
 def start_stream(device_name: str):
@@ -61,46 +82,38 @@ async def handle_input(
     x2: int = Form(0), y2: int = Form(0), duration: int = Form(0)
 ):
     # 这里也可以调用 module/adb.py 里的类方法，看你喜好
-    # 这里暂时保留 subprocess 调用方式
-    import subprocess
     try:
+        device = ADB(device_name)
         if action == "tap":
-            subprocess.run(["adb", "-s", device_name, "shell", "input", "tap", str(x1), str(y1)], timeout=2)
+            device.adb_shell(f"input tap {x1} {y1}")
         elif action == "swipe":
-            subprocess.run(["adb", "-s", device_name, "shell", "input", "swipe", str(x1), str(y1), str(x2), str(y2), str(duration)], timeout=2)
+            device.adb_shell(f"input swipe {x1} {y1} {x2} {y2} {duration}")
         return {"success": True, "message": "操作已发送"}
-    except subprocess.TimeoutExpired:
-        return JSONResponse(status_code=408, content={"success": False, "message": "ADB 操作超时"})
     except Exception as e:
         return JSONResponse(status_code=500, content={"success": False, "message": str(e)})
 
-# --- 截图 ---
-@router.post("/api/screenshot")
+# --- 保存截图 ---
+@router.post("/api/save_screenshot")
 async def save_screenshot(
-    device_name: str = Form(...), folder_path: str = Form(...),
-    file_name: str = Form(...), image: UploadFile = File(...)
+    folder_path: str = Form(''),
+    file_name: str = Form(''),
+    image: UploadFile = File(...)
 ):
     try:
-        if not os.path.exists(folder_path): os.makedirs(folder_path, exist_ok=True)
-        if not file_name: file_name = "screenshot.png"
+        if not folder_path: 
+            folder_path = platformdirs.user_downloads_dir()
+        if not os.path.exists(folder_path): 
+            os.makedirs(folder_path, exist_ok=True)
+        if not file_name: 
+            file_name = f"screenshot_{int(time.time())}.png"
         filepath = os.path.join(folder_path, file_name)
+
         with open(filepath, "wb") as buffer:
             buffer.write(await image.read())
-        return {"success": True, "message": "截屏成功", "path": filepath}
+        return {"success": True, "message": "保存截屏成功", "path": filepath}
     except Exception as e:
         return JSONResponse(status_code=500, content={"success": False, "message": str(e)})
 
-@router.get("/api/pick_folder")
-def pick_folder():
-    try:
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes('-topmost', True)
-        folder_path = filedialog.askdirectory(title="选择截图保存文件夹")
-        root.destroy()
-        return {"success": True, "path": folder_path}
-    except Exception as e:
-        return {"success": False, "message": str(e)}
 
 # --- 任务执行 ---
 from module.decorators import register_stop_signal, cleanup_stop_signal, TaskStoppedException
@@ -195,9 +208,24 @@ async def stop_task_api(request: Request):
 
 # ---- 找图/找字接口 ----
 @router.post("/api/find_image")
-async def find_image(request: Request):
-    pass
+async def find_image(
+    device_name: str = Form(''),
+    image: UploadFile = File(...)
+):
+    device = ADB(device_name)
+    img_bytes = await image.read()
+    device.图片预加载(img_bytes)
+    result = device.找图()
+    print(result)
+    return {"result": str(result)}
 
 @router.post("/api/ocr_text")
-async def ocr_text(request: Request):
-    pass
+async def ocr_text(
+    device_name: str = Form(''),
+    image: UploadFile = File(...)
+):
+    device = ADB(device_name)
+    img_bytes = await image.read()
+    result = device.找字(Specified_image=img_bytes)
+    print(result)
+    return {"result": str(result)}
