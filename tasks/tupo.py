@@ -4,15 +4,121 @@ class Task_tupo:
     def __init__(self, device:ADB, config:dict):
         self.op = device
         self.config = config
+        self.end = (int(self.op.height*3/5), int(self.op.width*9/10), int(self.op.width*1/10))
 
     def run(self):
-        if self.config.get("type") == "kekkai":
-            self.run_kekkai()
+        type = self.config.get("type")
+        # 找模式
+        self.op.图片预加载(f"tasks/突破图片/{type}.png", "tasks/突破图片/退出.png")
+        while True:
+            self.op.sleep(1)
+            result = self.op.找图()
+            if result == None:
+                continue
+            if f"{type}.png" in result:
+                self.op.点击(*result[f"{type}.png"])
+            elif "退出.png" in result:
+                break
+        if type == "个人突破":
+            self.refresh_kekkai()
         else:
-            self.run_ryou()
-    
-    def run_kekkai(self):
+            self.refresh_ryou()
+            
+    def refresh_kekkai(self):
         self.op.log(f"准备运行个人突破")
+        refresh = self.config.get("refresh") if self.config else "yes"
+        self.op.图片预加载("tasks/突破图片/入口.png", "tasks/突破图片/奖励.png", "tasks/突破图片/失败.png", 
+                      "tasks/突破图片/进攻.png", "tasks/突破图片/刷新.png", "tasks/突破图片/确定刷新.png", 
+                      "tasks/突破图片/未锁定.png", "tasks/突破图片/退出.png")
+        while True:
+            self.op.sleep(1)
+            result = self.op.找图()
+            if result == None:
+                self.op.sleep(3)
+                continue
+            if "未锁定.png" in result:
+                self.op.点击(*result["未锁定.png"])
+            elif "确定刷新.png" in result:
+                self.op.点击(*result["确定刷新.png"])
+            elif "进攻.png" in result:
+                self.op.点击(*result["进攻.png"])
+            elif "奖励.png" in result or "失败.png" in result:
+                self.op.点击(*self.end)
+            elif "入口.png" in result and "退出.png" in result:
+                x, y, r = result["入口.png"][0], result["入口.png"][1], result["入口.png"][2]
 
-    def run_ryou(self):
+                # 检测突破券数量
+                result_txt = self.op.找字(x1=0.7, y2=0.1, target_txt=r"\d+/30", use_regex=True)
+                if result_txt:
+                    a = result_txt[0].split("/")[0]
+                    if a == "0":
+                        self.op.点击(*result["退出.png"])
+                        break           
+                    self.op.点击(x-r, y+r, r)
+                    
+            elif "刷新.png" in result:
+                if refresh == "yes":
+                    self.op.点击(*result["刷新.png"])
+                else:
+                    break
+        self.op.log(f"个人突破完成")
+                
+    def refresh_ryou(self):
         self.op.log(f"开始运行寮突破")
+        count = 0
+        self.op.图片预加载("tasks/突破图片/入口.png", "tasks/突破图片/奖励.png", "tasks/突破图片/失败.png", 
+                      "tasks/突破图片/进攻.png", "tasks/突破图片/未锁定.png", "tasks/突破图片/退出.png",
+                      "tasks/突破图片/滑块.png")
+        while True:
+            self.op.sleep(1)
+            state = 0
+            result = self.op.找图()
+            if result == None:
+                self.op.sleep(3)
+                continue
+            if "未锁定.png" in result:
+                self.op.点击(*result["未锁定.png"])
+            elif "进攻.png" in result:
+                self.op.点击(*result["进攻.png"])
+            elif "奖励.png" in result or "失败.png" in result:
+                self.op.点击(*self.end)
+            elif "入口.png" in result and "退出.png" in result:
+                x, y, r = result["入口.png"][0], result["入口.png"][1], result["入口.png"][2]
+
+                # 检测寮突挑战数量
+                result_txt = self.op.找字(x1=0.1, y1=0.5, x2=0.3, y2=0.9)
+                import re
+                if result_txt:                       
+                    for item in result_txt:
+                        # 匹配百分比（如 0.83%、100%）
+                        match1 = re.search(r"(\d+(\.\d+)?)%", item)
+                        if match1:
+                            percent = float(match1.group(1))
+                            if percent >= 90:
+                                state += 1
+                                continue
+                        # 匹配"击败次数：x/6"
+                        match2 = re.search(r"击败次数[：:]?\s*(\d+)/6", item)
+                        if match2:
+                            a = match2.group(1)
+                            if a == "0":
+                                state += 2
+                    if state == 0:            
+                        self.op.点击(x-r, y+r, r)
+                    elif state == 1 or state == 3:
+                        self.op.log("寮突破任务结束")
+                    elif state == 2:
+                        if self.config.get("refresh") == "no":
+                            self.op.点击(*result["退出.png"])
+                            self.op.log(f"寮突破完成")
+                            break
+                        else:
+                            self.op.log("等待寮突破次数增加")
+                            self.op.sleep(300)
+            elif "滑块.png" in result and "入口.png" not in result:
+                count += 1
+                x, y, r = result["滑块.png"][0], result["滑块.png"][1], result["滑块.png"][2]
+                self.op.滑动(x, y, int(x-r/10), y+r, 5)
+            if count >= 3:
+                self.op.log("寮突破异常结束：无可突破对象")
+                break

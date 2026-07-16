@@ -45,7 +45,7 @@ class WebSocketLogManager:
             except Exception:
                 pass
 
-    def log(self, message: str, level: str = "info", source: str = None): # type: ignore
+    def log(self, message: object, level: str = "info", source: str = ''):
         """
         专用的日志函数，会同时输出到本地终端 + 推送到前端 WebSocket
         - message: 日志内容
@@ -56,7 +56,7 @@ class WebSocketLogManager:
         print(f"[{level.upper()}] {message}")
         
         # 推送到前端
-        self.broadcast(message, level, source)
+        self.broadcast(str(message), level, source)
 
 
 ws_manager = WebSocketLogManager()

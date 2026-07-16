@@ -292,9 +292,16 @@ streamContainer.addEventListener('mouseup', async (e) => {
         formData.append('device_name', deviceName);
 
         if (distX < 15 && distY < 15) {
-            formData.append('action', 'tap');
-            formData.append('x1', mouseDownCoords.x);
-            formData.append('y1', mouseDownCoords.y);
+            if (duration >= 500) {
+                formData.append('action', 'longpress');
+                formData.append('x1', mouseDownCoords.x);
+                formData.append('y1', mouseDownCoords.y);
+                formData.append('duration', duration);
+            } else {
+                formData.append('action', 'tap');
+                formData.append('x1', mouseDownCoords.x);
+                formData.append('y1', mouseDownCoords.y);
+            }
         } else {
             formData.append('action', 'swipe');
             formData.append('x1', mouseDownCoords.x);

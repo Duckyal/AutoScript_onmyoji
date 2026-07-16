@@ -5,9 +5,10 @@ from module.logmanager import ws_manager
 
 import cv2
 import numpy as np
-
 import os
 import time 
+import re
+
 from concurrent.futures import ThreadPoolExecutor
 
 
@@ -17,9 +18,9 @@ class ADB():
     # 用字典代替单一的 _instance，key 是传入的参数，value 是对应的实例
     _instances = {}
 
-    def __new__(cls, devices_id: str, mode: str = "less", max_workers=4, source: str = "server"):
+    def __new__(cls, device_id: str, mode: str = "less", max_workers=4, adapt_res_everytime: bool = False, source: str = "server"):
         # 把传入的参数变成一个可哈希的 key（比如元组）
-        cache_key = (devices_id, mode, max_workers, source)
+        cache_key = (device_id, mode, max_workers, adapt_res_everytime, source)
         
         # 如果这个参数组合没被实例化过，就新建一个
         if cache_key not in cls._instances:
@@ -27,29 +28,39 @@ class ADB():
         # 返回这个参数对应的唯一实例
         return cls._instances[cache_key]
 
-    def __init__(self, devices_id: str, mode: str = "less", max_workers=4, source: str = "server"):
+    def __init__(self, device_id: str, mode: str = "less", max_workers=4, adapt_res_everytime: bool = False, source: str = "server"):
+        """
+        初始化ADB实例，连接指定设备。
+        :param device_id: 设备ID，或"None"表示连接所有设备。
+        :param mode: 模式，"less"或"more"。
+        :param max_workers: 最大线程数。
+        :param adapt_res_everytime: 是否每次找图都适配分辨率。
+        :param source: 日志来源，"server"或"client"。
+        :return: ADB实例。
+        """
         # 由于 Python 机制，每次 return 缓存实例时，都会强制调用 __init__
         # 所以必须加一个标记，防止同一个实例被重复初始化
         if getattr(self, "_is_initialized", False):
             return
         
-        self.devices_id = devices_id
+        self.device_id = device_id
         self.mode = mode
         self.log_manager = ws_manager
         self.bz = bezierTrajectory()
 
         self.max_workers = max_workers  
+        self.adapt_res_everytime = adapt_res_everytime
         self.current_scale = None       # 全局缓存的手机分辨率缩放比
         self.cached_templates = {}      # 缓存所有模板图的灰度矩阵和原始尺寸
         self.executor = ThreadPoolExecutor(max_workers=self.max_workers) # 复用线程池，避免高频创建销毁
         
         try:
-            if devices_id == "None":
+            if device_id == "None":
                 self.d = u2.connect()
-            elif ':' not in devices_id and devices_id.isdigit():
-                self.d = u2.connect(f'127.0.0.1:{devices_id}')
+            elif ':' not in device_id and device_id.isdigit():
+                self.d = u2.connect(f'127.0.0.1:{device_id}')
             else:
-                self.d = u2.connect(devices_id)
+                self.d = u2.connect(device_id)
                 
             self.engine = RapidOCR()
             # 标记当前这个实例已经初始化完毕
@@ -57,9 +68,10 @@ class ADB():
         except Exception as e:
             self.log(f'设备初始化失败, 请检查设备是否连接。原始错误: {e}', "error")
             # 从缓存字典里删掉这个失败的实例
-            cache_key = (devices_id or "None", mode, source)
+            # 修复缓存键不一致问题，确保设备初始化失败时能正确清理缓存
+            cache_key = (device_id or "None", mode, max_workers, adapt_res_everytime, source)
             ADB._instances.pop(cache_key, None)
-            raise Exception(f"设备 {devices_id} 初始化失败") 
+            raise Exception(f"设备 {device_id} 初始化失败") 
 
         # 获取并更新设备分辨率(竖屏状态)
         w, h = self.d.window_size()
@@ -84,7 +96,7 @@ class ADB():
         check_stop(self)
 
     # 封装module/logmanager.py里日志函数的方法
-    def log(self, message: str, level: str = "info"):
+    def log(self, message: object, level: str = "info"):
         """
         专用的日志函数，会同时输出到本地终端 + 推送到前端 WebSocket
         - message: 日志内容
@@ -92,50 +104,101 @@ class ADB():
         """
         # 调用 ws_manager
         if self.log_manager:
-            self.log_manager.log(message, level, self.devices_id)
+            self.log_manager.log(message, level, self.device_id)
 
     # ============================================================================================
     # ============================================================================================
 
     # API en-US
     def launch_app(self, package_name:str):
+        '''
+        package_name: 应用包名
+        '''
         self.启动应用(package_name)
 
     def close_app(self, package_name:str):
+        '''
+        package_name: 应用包名
+        '''
         self.关闭应用(package_name)
 
     def screen_off(self):
+        '''
+        息屏
+        '''
         self.息屏()
 
-    def save_screenshot(self, save_path:str=adb_path, *point:tuple):
-        self.截图保存(save_path, *point)
+    def save_screenshot(self, save_path:str=adb_path, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1):
+        '''
+        save_path: 保存截图的路径，默认为 adb_path
+        x1, y1, x2, y2: 截图区域坐标，默认为 -1 表示全屏
+        '''
+        self.截图保存(save_path, x1, y1, x2, y2)
 
-    def get_screenshot(self, x1:int, y1:int, x2:int, y2:int):
+    def get_screenshot(self, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1):
+        '''
+        x1, y1, x2, y2: 截图区域坐标，默认为 -1 表示全屏
+        '''
         return self.获取截图(x1, y1, x2, y2)
     
     def simple_click(self, x:int, y:int, r, *els):
+        '''
+        x, y: 点击坐标
+        r: 点击位置，默认为 0
+        *els: 其他元素坐标，用于点击多个元素
+        '''
         self.简单点击(x, y, r, *els)
 
     def click(self, x:int, y:int, loc:int, *els):
+        '''
+        x, y: 点击坐标
+        loc: 点击位置，默认为 0
+        *els: 其他元素坐标，用于点击多个元素
+        '''
         self.点击(x, y, loc, *els)
 
     def swipe(self, start_x:int, start_y:int, end_x:int, end_y:int, count:int=30, delay:float=0.01):
+        '''
+        start_x, start_y: 起始点坐标
+        end_x, end_y: 结束点坐标
+        count: 滑动次数，默认为 30
+        delay: 每次滑动间隔，默认为 0.01
+        '''
         self.滑动(start_x, start_y, end_x, end_y, count, delay)
 
     def input_text(self, txt:str):
+        '''
+        txt: 要输入的文本
+        '''
         self.输入(txt)
 
     def adb_shell(self, shell:str):
+        '''
+        shell: 要执行的命令
+        '''
         self.adb命令行(shell)
     
     def image_preloading(self, *image_paths):
+        '''
+        image_paths: 图片路径列表
+        '''
         self.图片预加载(*image_paths)
     
-    def find_image(self, sim=0.95, x1:int=-1, y1:int=-1, x2:int=-1, y2:int=-1):
+    def find_image(self, sim=0.95, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1):
+        '''
+        sim: 图片相似度，默认为 0.95
+        x1, y1, x2, y2: 截图区域坐标，默认为 -1 表示全屏
+        '''
         return self.找图(sim, x1, y1, x2, y2)
     
-    def find_text(self, x1:int, y1:int, x2:int, y2:int, target_txt:str='', Specified_image=None):
-        return self.找字(x1, y1, x2, y2, target_txt, Specified_image)
+    def find_text(self, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1, Specified_image=None, target_txt:str='', use_regex: bool = False):
+        '''
+        x1, y1, x2, y2: 截图区域坐标，默认为 -1 表示全屏
+        Specified_image: 指定图片（如果不提供则使用当前截图）
+        target_txt: 目标文本（如果不提供则返回所有文本框信息），支持正则表达式，返回值为匹配到的文本对应坐标或None
+        use_regex: 是否启用正则匹配，默认为 False,;为True则返回值将为匹配到的文本列表，为False则返回匹配到的文本及其坐标
+        '''
+        return self.找字(x1, y1, x2, y2, Specified_image, target_txt, use_regex)
     
 
     # ============================================================================================
@@ -162,25 +225,50 @@ class ADB():
         if self.mode == "more":
             self.log('已息屏')
     
-    def 截图保存(self, save_path:str=adb_path, *point:tuple):
-        if len(point) == 0:
-            cv2.imwrite(save_path, self.d.screenshot(format='opencv')) # type: ignore
+    def 截图保存(self, save_path:str=adb_path, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1):
+        if x1 != -1:
+            x1 = int(self.height*x1) if isinstance(x1, float) else x1
         else:
-            cv2.imwrite(save_path, self.d.screenshot(format='opencv')[point[1]:point[3], point[0]:point[2]]) # type: ignore
+            x1 = 0
+        if y1 != -1:
+            y1 = int(self.width*y1) if isinstance(y1, float) else y1
+        else:
+            y1 = 0
+
+        if x2 != -1:
+            x2 = int(self.height*x2) if isinstance(x2, float) else x2
+        else:
+            x2 = self.height
+        if y2 != -1:
+            y2 = int(self.width*y2) if isinstance(y2, float) else y2
+        else:
+            y2 = self.width
+            
+        cv2.imwrite(save_path, self.d.screenshot(format='opencv')[y1:y2, x1:x2, :]) # type: ignore
         if self.mode == "more":
             self.log('已保存截图到:{0}'.format(save_path))
             
-    def 获取截图(self, x1:int=-1, y1:int=-1, x2:int=-1, y2:int=-1):
+    def 获取截图(self, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1):
         img = self.d.screenshot(format='opencv')
-        # cv2.imshow('img', img)    # 显示图片
-        if x1!=-1 and y1!=-1 and x2!=-1 and y2!=-1:
+        if x1 != -1:
             x1 = int(self.height*x1) if isinstance(x1, float) else x1
-            y1 = int(self.width*y1) if isinstance(y1, float) else y1
-            x2 = int(self.height*x2) if isinstance(x2, float) else x2
-            y2 = int(self.width*y2) if isinstance(y2, float) else y2
-            return img[y1:y2, x1:x2] # type: ignore
         else:
-            return img
+            x1 = 0
+        if y1 != -1:
+            y1 = int(self.width*y1) if isinstance(y1, float) else y1
+        else:
+            y1 = 0
+
+        if x2 != -1:
+            x2 = int(self.height*x2) if isinstance(x2, float) else x2
+        else:
+            x2 = self.height
+        if y2 != -1:
+            y2 = int(self.width*y2) if isinstance(y2, float) else y2
+        else:
+            y2 = self.width
+
+        return img[y1:y2, x1:x2, :] # type: ignore
         
                      
     def 简单点击(self, x:int, y:int, *els):
@@ -223,6 +311,18 @@ class ADB():
         if self.mode == "more":
             self.log(f'模拟点击({X}, {Y})')
 
+    def 长按(self, x:int, y:int, duration:float=1.5, jitter:float=0.1):
+        '''
+        长按指定坐标，持续时间可选，默认1.5秒
+        jitter: 随机时间前后偏移值，默认0.1
+        '''
+        self.d.touch.down(x, y)
+        duration += np.random.uniform(-jitter, jitter)
+        time.sleep(duration)
+        self.d.touch.up(x, y)
+        if self.mode == "more":
+            self.log(f'模拟长按({x}, {y})')
+
     def 滑动(self, start_x:int, start_y:int, end_x:int, end_y:int, count:int=30, delay:float=0.01):
         '''
         start_x, start_y 为起始坐标,
@@ -230,14 +330,13 @@ class ADB():
         count 决定了轨迹的细腻程度（点越多越慢越丝滑）
         delay 决定了每次移动的间隔时间（单位：秒，值越大越慢）
         '''
-        points = self.bz.trackArray((start_x, start_y), (end_x, end_y), count)
+        points = self.bz.trackArray((start_x, start_y), (end_x, end_y), count)['trackArray']
         # 首先：手指按下
         self.d.touch.down(start_x, start_y)
         # 其次：遍历轨迹点进行移动
         for x, y in points:
-            # 适当微调间隔时间增加拟人感
             self.d.touch.move(x, y)
-            time.sleep(0.01) 
+            time.sleep(delay) 
         # 最后：手指抬起
         self.d.touch.up(end_x, end_y)
         if self.mode == "more":
@@ -255,7 +354,7 @@ class ADB():
         执行命令行：在adb shell中执行
         示例：input tap 100 100
         '''
-        shell = f"adb -s {self.devices_id} shell {shell}"
+        shell = f"adb -s {self.device_id} shell {shell}"
         os.system(shell)
         if self.mode == "more":
             self.log('执行命令行:{0}'.format(shell))
@@ -273,71 +372,90 @@ class ADB():
             2. cv2 数组
             3. PIL 图片对象
         '''
-        self._clear_cache() # 预加载前先清理缓存，避免旧图干扰新图
+        self.cached_templates.clear()
+        failed_count = 0
+        img_index = 0
         for img in images:
             check_stop(self)
-            if isinstance(img, str):
-                if not os.path.exists(img):
+            gray_img = None
+            try:
+                if isinstance(img, str):
+                    if not os.path.exists(img):
+                        self.log(f"警告：图片文件不存在 - {img}")
+                        failed_count += 1
+                        continue
+                    img_name = os.path.basename(img)
+                    gray_img = cv2.imread(img, cv2.IMREAD_GRAYSCALE)
+                    if gray_img is None:
+                        self.log(f"警告：图片读取失败 - {img}")
+                        failed_count += 1
+                        continue
+                elif isinstance(img, bytes):
+                    img_name = f"uploaded_image_{img_index}"
+                    img_array = np.frombuffer(img, np.uint8)
+                    color_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                    if color_img is not None:
+                        gray_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
+                    else:
+                        self.log(f"警告：字节图片解码失败")
+                        failed_count += 1
+                        continue
+                elif isinstance(img, np.ndarray):
+                    img_name = f"cv2_array_{img_index}"
+                    if len(img.shape) == 2:
+                        gray_img = img
+                    else:
+                        gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                elif hasattr(img, 'read'):
+                    img_name = img.filename or "uploaded_image"
+                    img_bytes = img.read()
+                    img_array = np.frombuffer(img_bytes, np.uint8)
+                    color_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                    if color_img is not None:
+                        gray_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
+                    else:
+                        self.log(f"警告：上传图片解码失败 - {img_name}")
+                        failed_count += 1
+                        continue
+                elif hasattr(img, 'tobytes'):
+                    img_name = f"pil_image_{img_index}"
+                    img_array = np.array(img)
+                    if len(img_array.shape) == 2:
+                        gray_img = img_array
+                    elif img_array.shape[2] == 4:
+                        gray_img = cv2.cvtColor(img_array, cv2.COLOR_RGBA2GRAY)
+                    else:
+                        gray_img = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+                else:
+                    self.log(f"警告：不支持的图片类型 - {type(img)}")
+                    failed_count += 1
                     continue
-                img_name = os.path.basename(img)
-                gray_img = cv2.imread(img, cv2.IMREAD_GRAYSCALE)
-            elif isinstance(img, bytes):
-                img_name = "uploaded_image"
-                img_array = np.frombuffer(img, np.uint8)
-                color_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-                if color_img is not None:
-                    gray_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
-                else:
-                    gray_img = None
-            elif isinstance(img, np.ndarray):
-                img_name = "cv2_array"
-                if len(img.shape) == 2:
-                    gray_img = img
-                else:
-                    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            elif hasattr(img, 'read'):
-                img_name = img.filename or "uploaded_image"
-                img_bytes = img.read()
-                img_array = np.frombuffer(img_bytes, np.uint8)
-                color_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-                if color_img is not None:
-                    gray_img = cv2.cvtColor(img_array, cv2.COLOR_BGR2GRAY)
-                else:
-                    gray_img = None
-            elif hasattr(img, 'tobytes'):
-                img_name = "pil_image"
-                img_array = np.array(img)
-                if len(img_array.shape) == 2:
-                    gray_img = img_array
-                elif img_array.shape[2] == 4:
-                    gray_img = cv2.cvtColor(img_array, cv2.COLOR_RGBA2GRAY)
-                else:
-                    gray_img = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-            if gray_img is not None:
-                # 缓存 灰度图矩阵、高度、宽度
+                
                 self.cached_templates[img_name] = {
                     'img': gray_img,
                     'h': gray_img.shape[0],
                     'w': gray_img.shape[1]
                 }
+                img_index += 1
+            except Exception as e:
+                self.log(f"警告：加载图片失败 - {img if isinstance(img, str) else type(img)}: {e}")
+                failed_count += 1
         
         self.log(f"成功预加载了 {len(self.cached_templates)} 张模板图片。")
-        self._adapt_resolution() # 预加载后立即适配一次分辨率，锁定缩放比，提升后续找图效率
+        if self.current_scale is None or self.adapt_res_everytime:
+            self._adapt_resolution()       
 
-    def _clear_cache(self):
-        self.cached_templates.clear()
-        self.current_scale = None
-        self.log("已初始化预加载缓存。")
-
-    def _match_single_task(self, main_gray, img_name, sim):
+    def _match_single_task(self, main_gray, img_name, sim, offset_x=0, offset_y=0, priority_corner='tl'):
         '''
         多线程内部执行的单张图匹配任务
+        :param offset_x, offset_y: 局部截图相对于全屏的偏移量
+        :param priority_corner: 角优先度，可选 'tl', 'tr', 'bl', 'br'，默认左上角tl
         '''
         temp_info = self.cached_templates.get(img_name)
         if not temp_info:
             return None
         if self.current_scale is None:
-            raise RaiseError("未锁定分辨率，请先调用'适配分辨率(adapt_resolution)'方法进行测算！")
+            raise RaiseError("未锁定分辨率，请先调用'适配分辨率(adapt_res_everytime)'方法进行测算！")
         
         # 此时 self.current_scale 必然已经被主线程锁定了
         scale = self.current_scale
@@ -354,27 +472,57 @@ class ADB():
                                  interpolation=cv2.INTER_AREA if scale < 1.0 else cv2.INTER_CUBIC)
         
         result = cv2.matchTemplate(main_gray, resized_sub, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, max_loc = cv2.minMaxLoc(result)
-
-        if max_val >= sim:
-            x, y = max_loc
-            # 算出绝对中心点坐标
-            center_x = int(x + w_resized // 2)
-            center_y = int(y + h_resized // 2)
+        
+        # 找出所有匹配度超过阈值的点
+        locations = np.where(result >= sim)
+        
+        if len(locations[0]) == 0:
+            return None
+        
+        # 根据角优先度选择最近的点
+        h_main, w_main = main_gray.shape[:2]
+        best_dist = float('inf')
+        best_loc = None
+        best_val = 0
+        
+        for y, x in zip(*locations):
+            val = result[y, x]
+            # 计算到目标角的距离
+            if priority_corner == 'tl':
+                dist = x + y
+            elif priority_corner == 'tr':
+                dist = (w_main - x) + y
+            elif priority_corner == 'bl':
+                dist = x + (h_main - y)
+            elif priority_corner == 'br':
+                dist = (w_main - x) + (h_main - y)
+            else:
+                dist = x + y
+            
+            if dist < best_dist or (dist == best_dist and val > best_val):
+                best_dist = dist
+                best_loc = (x, y)
+                best_val = val
+        
+        if best_loc:
+            x, y = best_loc
+            # 算出绝对中心点坐标（加上偏移量）
+            center_x = int(x + w_resized // 2) + offset_x
+            center_y = int(y + h_resized // 2) + offset_y
             
             # 计算内切圆安全半径（即点击函数需要的 loc 范围）
             min_side = min(w_resized, h_resized)
             r = int((min_side // 2) * 0.8)
             r = max(r, 5) # 保底半径
             # 返回值格式： (图名, (匹配坐标x, 匹配坐标y, 推荐点击半径r, 模板宽度, 模板高度, 匹配度))
-            return img_name, (center_x, center_y, r, w_resized, h_resized, float(max_val))
+            return img_name, (center_x, center_y, r, w_resized, h_resized, float(best_val))
         return None
     
 
-    def _adapt_resolution(self, sim=0.85, target_image=None):
+    def _adapt_resolution(self, sim=0.95, target_image=None):
         '''
         向外辐射式测算分辨率缩放比，每次运行仅在初始化时执行一次。
-        :param sim: 匹配阈值
+        :param sim: 匹配阈值，默认 0.95
         :param target_image: 指定图片，若为 None 则轮询库中所有图。
         '''
         if not self.cached_templates:
@@ -455,21 +603,24 @@ class ADB():
 
         if global_best_val >= sim:
             self.current_scale = global_best_scale
-            self.log(f"[适配成功] 已锁定当前手机缩放比为: {global_best_scale:.4f}，成功匹配图: {success_img_name} (相似度: {global_best_val:.2f})")
+            self.log(f"已锁定当前手机缩放比为: {global_best_scale:.4f}，成功匹配图: {success_img_name} (相似度: {global_best_val:.2f})")
             return True
         else:
-            raise RaiseError(f"[适配失败] 轮询了整个测试图库，在当前屏幕上均未找到匹配项。当前全库最高匹配度仅为: {global_best_val:.2f} (来自图: {success_img_name})")
+            raise RaiseError(f"轮询了整个测试图库，在当前屏幕上均未找到匹配项。当前全库最高匹配度仅为: {global_best_val:.2f} (来自图: {success_img_name})")
 
-    def 找图(self, sim=0.85, x1=-1, y1=-1, x2=-1, y2=-1) -> dict[str, tuple]:
+    def 找图(self, sim=0.95, x1: int|float=-1, y1: int|float=-1, x2: int|float=-1, y2: int|float=-1, priority_corner='top-left') -> dict[str, tuple]:
         '''
+        :param sim: 匹配阈值，默认 0.95 
+        :param x1, y1, x2, y2: 截图区域坐标，默认为 -1 表示全屏
+        :param priority_corner: 角优先度，可选 'tl', 'tr', 'bl', 'br'，默认左上角tl
         返回值字典： {图名: (匹配坐标x, 匹配坐标y, 推荐点击半径r, 模板宽度, 模板高度, 匹配度)}
         '''
         if not self.cached_templates:
             raise RaiseError("没有可用的模板图片，请先调用'图片预加载'方法加载图片！")
-        
-        # 没有锁定分辨率，先进行一次性测算
-        if self.current_scale is None:
-            self.current_scale = self._adapt_resolution(sim)
+            
+        # 计算偏移量（局部截图相对于全屏的坐标偏移）
+        offset_x = int(self.height * x1) if isinstance(x1, float) and x1 != -1 else (int(x1) if x1 != -1 else 0)
+        offset_y = int(self.width * y1) if isinstance(y1, float) and y1 != -1 else (int(y1) if y1 != -1 else 0)
             
         # 已有分辨率，多线程并发极速找所有图
         output = {}
@@ -479,7 +630,7 @@ class ADB():
         main_gray = cv2.cvtColor(main_img, cv2.COLOR_BGR2GRAY) # type: ignore
 
         # 复用 init 里的线程池，避免 while 循环高频创建线程导致内存泄漏和 CPU 暴涨
-        results = list(self.executor.map(lambda name: self._match_single_task(main_gray, name, sim), img_names))
+        results = list(self.executor.map(lambda name: self._match_single_task(main_gray, name, sim, offset_x, offset_y, priority_corner), img_names))
 
         for result in results:
             if result:
@@ -491,12 +642,14 @@ class ADB():
 
         return output
     
-    def 找字(self, x1: int = -1, y1: int = -1, x2: int = -1, y2: int = -1, target_txt: str = '', Specified_image=None):
+    def 找字(self, x1: int|float = -1, y1: int|float = -1, x2: int|float = -1, y2: int|float = -1, Specified_image=None, target_txt: str = '', use_regex: bool = False):
         '''
         x1, y1, x2, y2: 截图区域坐标，默认为 -1 表示全屏
-        target_txt: 目标文本（如果不提供则返回所有文本框信息）
         Specified_image: 指定图片（如果不提供则使用当前截图）
+        target_txt: 目标文本（如果不提供则返回所有文本框信息），支持正则表达式，返回值为匹配到的文本对应坐标或None
+        use_regex: 是否启用正则匹配，默认为 False,;为True则返回值将为匹配到的文本列表，为False则返回匹配到的文本及其坐标
         '''
+        
         if Specified_image:
             if isinstance(Specified_image, bytes):
                 img_array = np.frombuffer(Specified_image, np.uint8)
@@ -514,11 +667,11 @@ class ADB():
         # 兜底：如果 RapidOCR 完全没有识别到任何东西
         if not result or not hasattr(result, 'txts') or not result.txts: # type: ignore
             self.log("未识别到任何文本！")
-            return {}
+            return None
 
         # 如果是全屏模式（-1 或 None），偏移量就是 0；如果是裁剪区域，偏移量就是左上角起点
-        offset_x = x1 if (x1 is not None and x1 != -1) else 0
-        offset_y = y1 if (y1 is not None and y1 != -1) else 0
+        offset_x = int(self.height * x1) if (isinstance(x1, float) and x1 != -1) else (int(x1) if x1 != -1 else 0)
+        offset_y = int(self.width * y1) if (isinstance(y1, float) and y1 != -1) else (int(y1) if y1 != -1 else 0)
 
         result_dict = {}
         try:
@@ -539,14 +692,26 @@ class ADB():
                 # 写入返回字典
                 result_dict[word] = (abs_x1, abs_y1, r)
 
-            if self.mode == "more" and result_dict:
-                self.log(str(result_dict))
-
             if target_txt == '':
+                if self.mode == "more" and result_dict:
+                    self.log(str(result_dict))
                 return result_dict
             else:
-                return result_dict.get(target_txt, None)
+                # 启用正则匹配
+                if use_regex:
+                    matched_results = []
+                    pattern = re.compile(target_txt)
+                    for word in result_dict.keys():
+                        if pattern.search(word):
+                            matched_results.append(word)
+                    if self.mode == "more" and matched_results:
+                        self.log(str(matched_results))
+                    return matched_results
+                else:
+                    if self.mode == "more" and result_dict:
+                        self.log(str(result_dict.get(target_txt, None)))
+                    return result_dict.get(target_txt, None)
                 
         except Exception as e:
             self.log(f"文本识别逻辑处理出错: {e}")
-            return {}
+            return None

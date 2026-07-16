@@ -88,6 +88,8 @@ async def handle_input(
             device.adb_shell(f"input tap {x1} {y1}")
         elif action == "swipe":
             device.adb_shell(f"input swipe {x1} {y1} {x2} {y2} {duration}")
+        elif action == "longpress":
+            device.adb_shell(f"input swipe {x1} {y1} {x1} {y1} {duration}")         
         return {"success": True, "message": "操作已发送"}
     except Exception as e:
         return JSONResponse(status_code=500, content={"success": False, "message": str(e)})

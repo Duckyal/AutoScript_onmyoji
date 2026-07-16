@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AutoScript - 主页</title>
   <!-- 网页图标 -->
-  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
   <!-- CSS 文件 -->
-  <link rel="stylesheet" href="css/variables.css">
-  <link rel="stylesheet" href="css/reset.css">
-  <link rel="stylesheet" href="css/layout.css">
-  <link rel="stylesheet" href="css/header.css">
-  <link rel="stylesheet" href="css/sidebar-task.css">
-  <link rel="stylesheet" href="css/content.css">
-  <link rel="stylesheet" href="css/terminal.css">
-  <link rel="stylesheet" href="css/form.css">
+  <link rel="stylesheet" href="/static/css/variables.css">
+  <link rel="stylesheet" href="/static/css/reset.css">
+  <link rel="stylesheet" href="/static/css/layout.css">
+  <link rel="stylesheet" href="/static/css/header.css">
+  <link rel="stylesheet" href="/static/css/sidebar-task.css">
+  <link rel="stylesheet" href="/static/css/content.css">
+  <link rel="stylesheet" href="/static/css/terminal.css">
+  <link rel="stylesheet" href="/static/css/form.css">
 </head>
 <body>
   <!-- 顶部标题栏 -->
@@ -50,43 +50,67 @@
         <main class="content-main" id="contentMain">
           <!-- 
           任务配置要点
-            1. 每个任务配置面板都必须有一个唯一的 id，且该 id 必须以 "panel-" 开头。
+            1. 每个任务配置面板都必须有一个唯一的 id，该 id 与任务脚本的文件名保持一致, 
+              例如 "panel-yuhun"，则执行脚本时后端会初始化/tasks/yuhun.py脚本里的Task_yuhun类。
             2. 每个任务配置面板都必须有一个 data-name 属性，该属性的值将用于在任务列表中显示任务名称。
             3. 每个任务配置面板内的表单元素必须有一个唯一的 name 属性，该属性将用于在提交任务时传递参数。
-            4. 每个任务配置面板内的表单元素必须有<div class="form-group">包裹，并且每个<div class="form-group">内必须有一个<label>标签和一个表单元素。
+            4. 每个任务配置面板内的表单元素必须由<div class="form-group">包裹
             5. 除第一个任务配置面板外，其他面板都应通过 style="display: none;" 来隐藏。
             -->
 
           <!-- 御魂配置 -->
-          <div class="task-panel" id="panel-yuhun" data-name="御魂">
+          <div class="task-panel" id="panel-yuhun" data-name="御魂(暂未实现)">
             <h3 class="task-panel__title">御魂配置</h3>
             <div class="form-group">
-              <label class="form-label" for="yuhun-layer">挑战层数</label>
-              <select class="form-select" id="yuhun-layer" name="layer">
+              <label class="form-label" for="layer">挑战层数</label>
+              <select class="form-select" id="layer" name="layer">
                 <option value="10">魂十</option>
                 <option value="11">魂十一</option>
                 <option value="12">魂十二</option>
               </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="yuhun-count">挑战次数(0为不限)</label>
-              <input class="form-input" type="number" id="yuhun-count" name="count" value="100" min="0">
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="yuhun-team">组队模式</label>
-              <select class="form-select" id="yuhun-team" name="team">
+              
+              <label class="form-label" for="count">挑战次数(0为不限)</label>
+              <input class="form-input" type="number" id="count" name="count" value="100" min="0">
+              
+              <label class="form-label" for="team">组队模式</label>
+              <select class="form-select" id="team" name="team">
                 <option value="solo">单人</option>
                 <option value="leader">队长</option>
                 <option value="member">队员</option>
               </select>
+              
+              <label class="form-label" for="mode">更多日志</label>
+              <select class="form-select" id="mode" name="mode">
+                <option value="less">否</option>
+                <option value="more">是</option>
+              </select>
             </div>
+          </div>
+
+          <!-- 御灵配置 -->
+          <div class="task-panel" id="panel-yuling" data-name="御灵">
+            <h3 class="task-panel__title">御灵配置</h3>
             <div class="form-group">
-              <label class="form-label" for="yuhun-shikigami">式神选择</label>
-              <input class="form-input" type="text" id="yuhun-shikigami" name="shikigami" placeholder="输入式神名称">
-            </div>
-            <div class="form-group">  
-              <label class="form-label" for="log-mode">更多日志</label>
-              <select class="form-select" id="log-mode" name="mode">
+              <label class="form-label" for="boss">挑战对象</label>
+              <select class="form-select" id="boss" name="boss">
+                <option value="暗神龙">暗神龙</option>
+                <option value="暗白藏主">暗白藏主</option>
+                <option value="暗黑豹">暗黑豹</option>
+                <option value="暗朱雀">暗朱雀</option>
+              </select>
+
+              <label class="form-label" for="layer">挑战层数</label>
+              <select class="form-select" id="layer" name="layer">
+                <option value="三层">第三层</option>
+                <option value="二层">第二层</option>
+                <option value="一层">第一层</option>
+              </select>
+              
+              <label class="form-label" for="count">挑战次数(0为不限)</label>
+              <input class="form-input" type="number" id="count" name="count" value="100" min="0">
+              
+              <label class="form-label" for="mode">更多日志</label>
+              <select class="form-select" id="mode" name="mode">
                 <option value="less">否</option>
                 <option value="more">是</option>
               </select>
@@ -97,16 +121,14 @@
           <div class="task-panel" id="panel-douji" style="display: none;" data-name="斗技">
             <h3 class="task-panel__title">斗技配置</h3>
             <div class="form-group">
-              <label class="form-label" for="douji-count">挑战次数</label>
-              <select class="form-input" id="douji-count" name="count">
+              <label class="form-label" for="count">挑战次数</label>
+              <select class="form-select" id="count" name="count">
                 <option value="none">不限次数</option>
-                <option value="gold">到达名仕</option>
                 <option value="point">荣誉点满</option>
               </select>
-            </div>
-            <div class="form-group">  
-              <label class="form-label" for="log-mode">更多日志</label>
-              <select class="form-select" id="log-mode" name="mode">
+              
+              <label class="form-label" for="mode">更多日志</label>
+              <select class="form-select" id="mode" name="mode">
                 <option value="less">否</option>
                 <option value="more">是</option>
               </select>
@@ -117,26 +139,41 @@
           <div class="task-panel" id="panel-tupo" style="display: none;" data-name="突破">
             <h3 class="task-panel__title">突破配置</h3>
             <div class="form-group">
-              <label class="form-label" for="tupo-type">突破类型</label>
-              <select class="form-select" id="tupo-type" name="type">
-                <option value="kekkai">个人突破</option>
-                <option value="ryou">寮突破</option>
+              <label class="form-label" for="type">突破类型</label>
+              <select class="form-select" id="type" name="type">
+                <option value="个人突破">个人突破</option>
+                <option value="寮突破">寮突破</option>
               </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="tupo-count">突破次数(0为不限)</label>
-              <input class="form-input" type="number" id="tupo-count" name="count" value="30" min="0">
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="tupo-refresh">自动刷新</label>
-              <select class="form-select" id="tupo-refresh" name="refresh">
+              
+              <label class="form-label" for="refresh">自动刷新</label>
+              <select class="form-select" id="refresh" name="refresh">
                 <option value="yes">是</option>
                 <option value="no">否</option>
               </select>
+              
+              <label class="form-label" for="mode">更多日志</label>
+              <select class="form-select" id="mode" name="mode">
+                <option value="less">否</option>
+                <option value="more">是</option>
+              </select>
             </div>
-            <div class="form-group">  
-              <label class="form-label" for="log-mode">更多日志</label>
-              <select class="form-select" id="log-mode" name="mode">
+          </div>
+
+          <!-- 困28配置 -->
+          <div class="task-panel" id="panel-k28" style="display: none;" data-name="困28">
+            <h3 class="task-panel__title">困28配置</h3>
+            <div class="form-group">
+              <label class="form-label" for="count">突破上限(0为不清)</label>
+              <input class="form-input" type="number" id="count" name="count" value="25" min="0" max="30">
+
+              <label class="form-label" for="lunhuan">轮换狗粮(二星)</label>
+              <select class="form-select" id="lunhuan" name="lunhuan">
+                <option value="素材">素材</option>
+                <option value="N卡">N卡</option>
+              </select>
+              
+              <label class="form-label" for="mode">更多日志</label>
+              <select class="form-select" id="mode" name="mode">
                 <option value="less">否</option>
                 <option value="more">是</option>
               </select>
@@ -147,15 +184,14 @@
           <div class="task-panel" id="panel-yinjie" style="display: none;" data-name="英杰">
             <h3 class="task-panel__title">英杰配置</h3>
             <div class="form-group">
-              <label class="form-label" for="yinjie-type">挑战类型</label>
-              <select class="form-select" id="yinjie-type" name="type">
-                <option value="yuan">源赖光</option>
+              <label class="form-label" for="type">挑战类型</label>
+              <select class="form-select" id="type" name="type">
+                <option value="yuan">源赖光(暂未实现)</option>
                 <option value="tengyuan">藤原道长</option>
               </select>        
-            </div>  
-            <div class="form-group">  
-              <label class="form-label" for="log-mode">更多日志</label>
-              <select class="form-select" id="log-mode" name="mode">
+              
+              <label class="form-label" for="mode">更多日志</label>
+              <select class="form-select" id="mode" name="mode">
                 <option value="less">否</option>
                 <option value="more">是</option>
               </select>
@@ -166,25 +202,22 @@
           <div class="task-panel" id="panel-huodong" style="display: none;" data-name="活动">
             <h3 class="task-panel__title">活动配置</h3>
             <div class="form-group">
-              <label class="form-label" for="yinjie-type">活动类型</label>
-              <select class="form-select" id="yinjie-type" name="type">
+              <label class="form-label" for="type">活动类型</label>
+              <select class="form-select" id="type" name="type">
                 <option value="normal">爬塔</option>
-                <option value="else">其他</option>
+                <option value="else">其他(暂未实现)</option>
               </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="yuhun-count">挑战次数(0为不限)</label>
-              <input class="form-input" type="number" id="yuhun-count" name="count" value="100" min="0">
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="log-mode">更多日志</label>
-              <select class="form-select" id="log-mode" name="mode">
+              
+              <label class="form-label" for="count">挑战次数(0为不限)</label>
+              <input class="form-input" type="number" id="count" name="count" value="100" min="0">
+              
+              <label class="form-label" for="mode">更多日志</label>
+              <select class="form-select" id="mode" name="mode">
                 <option value="less">否</option>
                 <option value="more">是</option>
               </select>
             </div>
           </div>
-
 
         </main>
       </div>
@@ -226,8 +259,8 @@
   {% endif %}
    
   <!-- JavaScript 文件 -->
-  <script src="js/home/task.js"></script>
-  <script src="js/home/terminal.js"></script>
-  <script src="js/home/app.js"></script>
+  <script src="/static/js/home/task.js?v={{ time_now }}"></script>
+  <script src="/static/js/home/terminal.js?v={{ time_now }}"></script>
+  <script src="/static/js/home/app.js?v={{ time_now }}"></script>
 </body>
 </html>

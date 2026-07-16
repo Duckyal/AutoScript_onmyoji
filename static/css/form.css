@@ -17,6 +17,11 @@
   color: var(--color-text-secondary);
 }
 
+.form-input + .form-label,
+.form-select + .form-label {
+  margin-top: var(--spacing-5);
+}
+
 /* 输入框 */
 .form-input {
   width: 100%;

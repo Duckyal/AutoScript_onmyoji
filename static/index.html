@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AutoScript - 设备启动器</title>
-  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
   <style>
     html, body {
       width: 100%;       /* 强制宽度占满全屏 */
@@ -148,7 +148,7 @@
     <button class="refresh-btn" id="refreshBtn">刷新设备列表</button>
   </div>
 
-  <script src="js/index/login.js"></script>
+  <script src="/static/js/index/login.js?v={{ time_now }}"></script>
   <script>
     (async function () {
     try {

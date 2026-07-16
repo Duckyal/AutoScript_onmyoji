@@ -3,7 +3,7 @@
  * 自动收集表单，无需为新任务写死 JS
  */
 const TaskManager = {
-  currentTask: 'yuhun',
+  currentTask: '',
 
   init() {
     // 自动获取初始任务名 (从 HTML 的 active 类获取)
