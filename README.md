@@ -216,14 +216,6 @@ if result:
             a, b = match.groups()
 ```
 
-### 前端同步
-
-修改前端后同步到 GitHub Pages：
-
-```bash
-./sync_frontend.sh
-```
-
 ## 注意事项
 
 - 请确保 ADB 连接稳定
