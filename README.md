@@ -5,13 +5,14 @@
 ## 功能特性
 
 - **Web 界面管理**：基于 FastAPI 的现代化 Web 界面，支持实时日志查看和任务管理
-- **开发控制台**：集成 scrcpy 投屏功能，支持实时查看设备屏幕、远程操作、拉框截图
-- **内置任务**：支持御魂、斗技、突破、英杰、活动等游戏任务自动化
-- **OCR 识别**：集成 RapidOCR 进行图像文字识别，支持找图和找字功能
-- **图像处理**：使用 OpenCV 进行图像分析和模板匹配
+- **开发控制台**：集成 scrcpy 投屏功能，支持实时查看设备屏幕、远程操作、拉框截图、找图找字
+- **内置任务**：支持御魂、御灵、斗技、突破、英杰、活动、K28 等游戏任务自动化
+- **OCR 识别**：集成 RapidOCR 进行图像文字识别，支持正则匹配和局部区域识别
+- **图像处理**：使用 OpenCV 进行图像分析和模板匹配，支持角优先度选择
 - **实时日志**：WebSocket 实时日志传输和终端样式显示
 - **ADB 集成**：通过 ADB 连接 Android 设备进行自动化操作
 - **可中断任务**：支持优雅停止运行中的任务
+- **多设备支持**：支持同时连接多个设备
 
 ## 安装步骤
 
@@ -26,8 +27,6 @@
 ```bash
 git clone https://github.com/Duckyal/AutoScript_onmyoji.git
 cd AutoScript_onmyoji
-
-# 初始化虚拟环境并安装依赖
 uv sync
 ```
 
@@ -36,13 +35,8 @@ uv sync
 ```bash
 git clone https://github.com/Duckyal/AutoScript_onmyoji.git
 cd AutoScript_onmyoji
-
-# 创建虚拟环境
 python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# .venv\Scripts\activate    # Windows
-
-# 安装依赖
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -68,14 +62,12 @@ brew install android-platform-tools
 ### 启动服务
 
 ```bash
-# 使用 uv
 uv run python main.py
-
-# 或直接运行
+# 或
 python main.py
 ```
 
-服务将在 `http://0.0.0.0:8000` 启动。
+服务将在 `http://0.0.0.0:8000` 启动（可搭配内网穿透工具异网操控本地脚本运行）。
 
 ### 连接设备
 
@@ -83,10 +75,7 @@ python main.py
 2. 通过 USB 或网络连接设备：
 
 ```bash
-# USB 连接
 adb devices
-
-# 网络连接（需先通过 USB 连接一次）
 adb tcpip 5555
 adb connect <设备IP>:5555
 ```
@@ -97,21 +86,23 @@ adb connect <设备IP>:5555
 
 在首页输入设备序列号后进入设备页，选择任务类型并配置参数：
 
-- **御魂**：自动执行御魂副本，支持选择层数、次数、组队模式
+- **御魂**：自动执行御魂副本，支持选择层数、次数、组队模式（暂不支持）
+- **御灵**：自动执行御灵副本，支持选择层数、次数、组队模式
 - **斗技**：自动斗技场对战，支持到达名仕或荣誉点满自动停止
 - **突破**：自动式神突破，支持个人突破和寮突破
-- **英杰**：自动挑战英杰副本
-- **活动**：自动执行活动任务
+- **英杰**：自动挑战英杰副本（仅支持部分功能）
+- **活动**：自动执行活动任务（仅支持部分功能）
+- **K28**：自动执行探索副本，支持突破券满自动切换突破任务
 
 #### 开发控制台
 
 点击"开发页"进入开发控制台，支持：
 
 - **实时投屏**：查看设备屏幕实时画面
-- **远程操作**：鼠标点击、拖拽控制设备
+- **远程操作**：鼠标点击、长按、拖拽控制设备
 - **拉框截图**：框选屏幕区域并保存截图
-- **找图功能**：上传图片进行模板匹配
-- **找字功能**：OCR 文字识别
+- **找图功能**：上传图片进行模板匹配，支持角优先度
+- **找字功能**：OCR 文字识别，支持正则匹配
 
 ## 项目结构
 
@@ -119,10 +110,10 @@ adb connect <设备IP>:5555
 AutoScript_onmyoji/
 ├── main.py                 # 主程序入口（FastAPI 服务）
 ├── requirements.txt        # Python 依赖
-├── sync_frontend.sh        # 前端同步脚本（推送到 github.io）
+├── README.md               # 项目介绍
 ├── .gitignore              # Git 忽略配置
 ├── api/                    # API 路由
-│   ├── routes.py           # 核心 API 路由（任务、截图、OCR 等）
+│   ├── routes.py           # 核心 API 路由（任务、截图、OCR、视频流）
 │   └── ui.py               # UI 页面路由
 ├── module/                 # 核心模块
 │   ├── adb.py              # ADB 设备管理（截图、点击、找图、找字）
@@ -133,20 +124,18 @@ AutoScript_onmyoji/
 ├── static/                 # 静态资源（前端页面）
 │   ├── css/                # 样式文件
 │   ├── js/                 # JavaScript 文件
-│   │   ├── dev/            # 开发控制台脚本
-│   │   ├── home/           # 主页脚本
-│   │   └── index/          # 首页脚本
 │   ├── dev.html            # 开发控制台页面
 │   ├── home.html           # 设备页
 │   └── index.html          # 首页（设备选择）
 └── tasks/                  # 任务脚本
     ├── yuhun.py            # 御魂任务
+    ├── yuling.py           # 御灵任务
     ├── douji.py            # 斗技任务
     ├── tupo.py             # 突破任务
     ├── yinjie.py           # 英杰任务
     ├── huodong.py          # 活动任务
-    └── 斗技图片/           # 斗技任务图片资源
-        └── ...
+    ├── k28.py              # K28 任务
+    └── 图片资源目录/        # 各任务图片模板
 ```
 
 ## API 接口
@@ -182,6 +171,12 @@ AutoScript_onmyoji/
 | `/api/start_stream` | POST | 启动视频流 |
 | `/api/stop_stream` | POST | 停止视频流 |
 
+### 输入控制
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/input` | POST | 点击/滑动/长按操作 |
+
 ## 开发说明
 
 ### 添加新任务
@@ -192,13 +187,34 @@ AutoScript_onmyoji/
 
 ### 自定义脚本规范
 
-自定义脚本需要符合以下规范：
-
-- 脚本文件应为 `.py` 文件
 - 创建任务类，接收 `device`（ADB 实例）和 `config`（配置字典）参数
 - 在 `run()` 方法中实现任务逻辑
 - 使用 `self.op.sleep()` 替代 `time.sleep()`（支持中断）
 - 使用 `self.op.log()` 进行日志输出
+- 使用 `self.op.图片预加载()` 预加载模板图片
+- 使用 `self.op.找图()` 和 `self.op.找字()` 进行图像和文字识别
+
+### 找图角优先度
+
+找图方法支持四个角优先度：
+
+```python
+self.op.找图(priority_corner='tl')  # 左上角（默认）
+self.op.找图(priority_corner='tr') # 右上角
+self.op.找图(priority_corner='bl') # 左下角
+self.op.找图(priority_corner='br') # 右下角
+```
+
+### 找字正则匹配
+
+```python
+result = self.op.找字(target_txt=r"\d+/\d+", use_regex=True)
+if result:
+    for text in result:
+        match = re.search(r"(\d+)/(\d+)", text)
+        if match:
+            a, b = match.groups()
+```
 
 ### 前端同步
 
@@ -215,7 +231,8 @@ AutoScript_onmyoji/
 - 使用自动化脚本时请遵守游戏规则
 - 建议在测试环境先验证脚本功能
 - 截图默认保存到系统下载目录
+- 支持 Windows、Linux、macOS 多平台
 
 ## 许可证
 
-本项目采用 MIT 许可证。
+MIT License
