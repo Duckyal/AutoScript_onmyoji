@@ -21,30 +21,70 @@
 - Python 3.10~3.13（**不支持 3.14**，多数依赖尚无预编译 wheel）
 - Android 设备（支持 ADB 连接）
 - ADB 工具（建议安装完整的 Android SDK Platform Tools）
+- scrcpy 命令行工具（用于视频流功能）
 
-### 使用 uv 安装（推荐）
+### 安装 uv（推荐）
+
+uv 是一个快速的 Python 包管理器，建议使用 uv 管理虚拟环境和依赖：
 
 ```bash
-git clone https://github.com/Duckyal/AutoScript_onmyoji.git
-cd AutoScript_onmyoji
-uv venv
-uv pip install -r requirements.txt
+# Linux/Mac
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows (PowerShell)
+irm https://astral.sh/uv/install.ps1 | iex
+
+# 验证安装
+uv --version
 ```
 
-### 使用 pip 安装
+### 使用 uv 创建虚拟环境并安装依赖
 
 ```bash
+# 1. 克隆项目
 git clone https://github.com/Duckyal/AutoScript_onmyoji.git
 cd AutoScript_onmyoji
+
+# 2. 创建虚拟环境（自动创建 .venv 目录）
+uv venv
+
+# 3. 安装项目依赖
+uv pip install -r requirements.txt
+
+# 4. 验证安装（可选）
+uv pip list
+```
+
+### 使用 pip 创建虚拟环境并安装依赖
+
+如果你不使用 uv，可以使用标准的 pip 方式：
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/Duckyal/AutoScript_onmyoji.git
+cd AutoScript_onmyoji
+
+# 2. 创建虚拟环境
 python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# .venv\Scripts\activate    # Windows
+
+# 3. 激活虚拟环境
+# Linux/Mac
+source .venv/bin/activate
+# Windows Command Prompt
+.venv\Scripts\activate.bat
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+
+# 4. 安装依赖
 pip install -r requirements.txt
+
+# 5. 验证安装（可选）
+pip list
 ```
 
 ### 安装 scrcpy（外置命令行工具）
 
-视频流功能需要安装外置的 scrcpy 命令行工具：
+视频流功能需要安装外置的 scrcpy 命令行工具（不再依赖 Python 库）：
 
 ```bash
 # Ubuntu/Debian
@@ -61,8 +101,6 @@ brew install scrcpy
 # 解压后添加到 PATH
 ```
 
-> **注意**：项目已改用外置 scrcpy 命令行工具，不再依赖 `scrcpy-client` Python 库，彻底解决了与 `uiautomator2` 的 `adbutils` 版本冲突问题。
-
 ### 安装 ADB
 
 ```bash
@@ -78,6 +116,27 @@ brew install android-platform-tools
 # Windows
 # 下载 https://developer.android.com/studio/releases/platform-tools
 # 解压后添加到 PATH
+```
+
+### 验证安装
+
+安装完成后可以验证关键工具是否可用：
+
+```bash
+# 验证 Python
+python --version
+
+# 验证 ADB
+adb version
+
+# 验证 scrcpy
+scrcpy --version
+
+# 验证虚拟环境（uv）
+uv run python -c "import fastapi; print('FastAPI:', fastapi.__version__)"
+
+# 验证虚拟环境（pip）
+python -c "import fastapi; print('FastAPI:', fastapi.__version__)"
 ```
 
 ## 使用方法
