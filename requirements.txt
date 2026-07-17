@@ -3,7 +3,6 @@ uvicorn[standard]
 jinja2
 requests
 uiautomator2
-scrcpy-client
 opencv-python
 numpy
 rapidocr

@@ -42,40 +42,26 @@ source .venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-### Windows 安装注意事项
+### 安装 scrcpy（外置命令行工具）
 
-**scrcpy-client 和 uiautomator2 的 adbutils 版本冲突问题**：
-
-`scrcpy-client>=0.4.0` 声明需要 `adbutils<2.0.0`，而 `uiautomator2>=3.0.0` 需要 `adbutils>=2.0.0`。虽然声明冲突，但实际运行时 `adbutils>=2.x` 与 `scrcpy-client>=0.4.7` 可以正常共存。
-
-**推荐安装步骤**：
+视频流功能需要安装外置的 scrcpy 命令行工具：
 
 ```bash
-# 1. 创建虚拟环境
-python -m venv .venv
-.venv\Scripts\activate
+# Ubuntu/Debian
+sudo apt install scrcpy
 
-# 2. 先安装 adbutils（高版本）
-pip install adbutils>=2.0.0
+# Arch Linux
+sudo pacman -S scrcpy
 
-# 3. 不检查依赖安装 scrcpy-client
-pip install scrcpy-client --no-deps
+# macOS (Homebrew)
+brew install scrcpy
 
-# 4. 安装其他依赖
-pip install uiautomator2
-pip install fastapi uvicorn[standard] jinja2 requests
-pip install opencv-python numpy rapidocr onnxruntime
-pip install python-multipart platformdirs
+# Windows
+# 下载 https://github.com/Genymobile/scrcpy/releases
+# 解压后添加到 PATH
 ```
 
-**使用 uv 的替代方案**：
-
-如果使用 uv 遇到解析错误，改用 pip 安装：
-```bash
-uv venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
+> **注意**：项目已改用外置 scrcpy 命令行工具，不再依赖 `scrcpy-client` Python 库，彻底解决了与 `uiautomator2` 的 `adbutils` 版本冲突问题。
 
 ### 安装 ADB
 

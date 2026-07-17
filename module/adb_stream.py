@@ -49,13 +49,12 @@ def get_devices() -> List[str]:
     except Exception as e:
         print(f"获取设备失败: {e}")
         return []
-    
 
-# scrcpy视频流封装
+
+# scrcpy视频流封装（使用外置scrcpy命令行工具）
 import time
 import threading
 import numpy as np
-import scrcpy
 import cv2
 from threading import Lock
 from typing import Optional
@@ -64,10 +63,9 @@ class StreamManager:
     def __init__(self):
         self.current_frame: Optional[np.ndarray] = None
         self.frame_lock = Lock()
-        self.current_client: Optional[scrcpy.Client] = None
+        self.scrcpy_process = None
         self.current_device: Optional[str] = None
         
-        # 新增：流状态记录
         self.status = {
             "connected": False,
             "message": "未初始化",
@@ -77,14 +75,12 @@ class StreamManager:
     @staticmethod
     def _generate_placeholder_image(text="连接中..."):
         """生成带有提示文字的灰色占位图"""
-        # 生成深灰色背景 (1080x720)
         img = np.zeros((720, 1080, 3), np.uint8)
-        img[:] = (50, 50, 50) 
+        img[:] = (50, 50, 50)
         
-        # 添加文字
         font = cv2.FONT_HERSHEY_SIMPLEX
         text_size = cv2.getTextSize(text, font, 1.5, 2)[0]
-        text_x = (1280 - text_size[0]) // 2
+        text_x = (1080 - text_size[0]) // 2
         text_y = (720 + text_size[1]) // 2
         
         cv2.putText(img, text, (text_x, text_y), font, 1.5, (255, 255, 255), 2, cv2.LINE_AA)
@@ -98,54 +94,86 @@ class StreamManager:
             return cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
         return frame
 
-    def _on_frame(self, frame: np.ndarray):
-        """回调：收到帧时更新画面和状态"""
-        if frame is not None:
-            with self.frame_lock:
-                self.current_frame = frame.copy()
-            
-            # 更新状态：已连接
-            self.status["connected"] = True
-            self.status["message"] = "已连接"
-            self.status["retry_count"] = 0
+    def _stop_process(self):
+        """停止scrcpy进程"""
+        if self.scrcpy_process is not None:
+            try:
+                self.scrcpy_process.terminate()
+                self.scrcpy_process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                self.scrcpy_process.kill()
+            except Exception:
+                pass
+            self.scrcpy_process = None
 
     def start(self, device_name: str):
-        if self.current_device == device_name and self.current_client is not None:
+        if self.current_device == device_name and self.scrcpy_process is not None:
             return
 
-        if self.current_client is not None:
-            self.current_client.stop()
-            self.current_client = None
+        self._stop_process()
 
         self.current_device = device_name
-        # 初始化状态
         self.status = {"connected": False, "message": "正在初始化...", "retry_count": 0}
 
         def worker():
             retry_count = 0
             while self.current_device == device_name:
                 try:
-                    # 更新状态：连接中
                     self.status["message"] = f"正在连接 (尝试 {retry_count + 1})..."
                     
-                    client = scrcpy.Client(
-                        device=device_name,
-                        max_width=0,           # 0 = 不限制，使用设备原始分辨率，确保坐标一致
-                        bitrate=8000000,
-                        max_fps=60,            
-                        connection_timeout=10000, # 设为 10 秒。虚拟机或无线启动有时很慢，太短会导致连接超时。
-                        stay_awake=True,       # 必须常亮。
-                    )
-                    self.current_client = client
-                    client.add_listener(scrcpy.EVENT_FRAME, self._on_frame)
-                    client.start() # 阻塞运行
+                    cmd = [
+                        'scrcpy',
+                        '--tcpip',
+                        '-s', device_name,
+                        '--max-size', '0',
+                        '--bit-rate', '8M',
+                        '--max-fps', '60',
+                        '--no-audio',
+                        '--no-control',
+                        '--stay-awake',
+                        '--raw',
+                    ]
                     
-                    # 正常退出循环
-                    retry_count = 0
+                    self.scrcpy_process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        bufsize=0,
+                    )
+                    
+                    pipe = self.scrcpy_process.stdout
+                    frame_buffer = bytearray()
+                    
+                    while self.current_device == device_name:
+                        data = pipe.read(4096)
+                        if not data:
+                            break
+                        frame_buffer.extend(data)
+                        
+                        while len(frame_buffer) > 4:
+                            if frame_buffer[0:4] == b'\x00\x00\x00\x01':
+                                frame_size_end = frame_buffer.find(b'\x00\x00\x00\x01', 4)
+                                if frame_size_end == -1:
+                                    break
+                                
+                                frame_data = bytes(frame_buffer[:frame_size_end])
+                                frame_buffer = frame_buffer[frame_size_end:]
+                                
+                                try:
+                                    frame = cv2.imdecode(np.frombuffer(frame_data, np.uint8), cv2.IMREAD_COLOR)
+                                    if frame is not None:
+                                        with self.frame_lock:
+                                            self.current_frame = frame.copy()
+                                        self.status["connected"] = True
+                                        self.status["message"] = "已连接"
+                                        self.status["retry_count"] = 0
+                                except Exception:
+                                    pass
+                            else:
+                                frame_buffer = frame_buffer[1:]
                     
                 except Exception as e:
                     print(f"Scrcpy 流断开: {e}")
-                    # 更新状态：断开
                     self.status["connected"] = False
                     self.status["message"] = f"连接断开: {str(e)[:20]}"
                     
@@ -158,8 +186,10 @@ class StreamManager:
                     
                     self.status["message"] = f"5秒后重连..."
                     time.sleep(5)
+                
+                finally:
+                    self._stop_process()
             
-            # 线程结束
             self.status["connected"] = False
             self.status["message"] = "流已停止"
 
@@ -170,7 +200,6 @@ class StreamManager:
         """获取当前帧，如果无画面则返回带文字的占位图"""
         with self.frame_lock:
             if self.current_frame is None:
-                # 返回包含当前状态信息的占位图
                 return self._generate_placeholder_image(self.status["message"])
             frame = self.current_frame.copy()
 
@@ -182,5 +211,4 @@ class StreamManager:
         """获取当前流状态"""
         return self.status
 
-# 全局单例
 stream_manager = StreamManager()
