@@ -18,7 +18,7 @@
 
 ### 环境要求
 
-- Python 3.10+
+- Python 3.10~3.13（**不支持 3.14**，多数依赖尚无预编译 wheel）
 - Android 设备（支持 ADB 连接）
 - ADB 工具（建议安装完整的 Android SDK Platform Tools）
 
@@ -27,7 +27,8 @@
 ```bash
 git clone https://github.com/Duckyal/AutoScript_onmyoji.git
 cd AutoScript_onmyoji
-uv sync
+uv venv
+uv pip install -r requirements.txt
 ```
 
 ### 使用 pip 安装
@@ -36,7 +37,43 @@ uv sync
 git clone https://github.com/Duckyal/AutoScript_onmyoji.git
 cd AutoScript_onmyoji
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate  # Linux/Mac
+# .venv\Scripts\activate    # Windows
+pip install -r requirements.txt
+```
+
+### Windows 安装注意事项
+
+**scrcpy-client 和 uiautomator2 的 adbutils 版本冲突问题**：
+
+`scrcpy-client>=0.4.0` 声明需要 `adbutils<2.0.0`，而 `uiautomator2>=3.0.0` 需要 `adbutils>=2.0.0`。虽然声明冲突，但实际运行时 `adbutils>=2.x` 与 `scrcpy-client>=0.4.7` 可以正常共存。
+
+**推荐安装步骤**：
+
+```bash
+# 1. 创建虚拟环境
+python -m venv .venv
+.venv\Scripts\activate
+
+# 2. 先安装 adbutils（高版本）
+pip install adbutils>=2.0.0
+
+# 3. 不检查依赖安装 scrcpy-client
+pip install scrcpy-client --no-deps
+
+# 4. 安装其他依赖
+pip install uiautomator2
+pip install fastapi uvicorn[standard] jinja2 requests
+pip install opencv-python numpy rapidocr onnxruntime
+pip install python-multipart platformdirs
+```
+
+**使用 uv 的替代方案**：
+
+如果使用 uv 遇到解析错误，改用 pip 安装：
+```bash
+uv venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
