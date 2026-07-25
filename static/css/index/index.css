@@ -1,0 +1,98 @@
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #1e1e2e;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #cdd6f4;
+}
+.launcher-card {
+  background: rgba(49, 50, 68, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 40px;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  width: 360px;
+  text-align: center;
+  position: relative;
+}
+.launcher-title {
+  margin-bottom: 30px;
+  font-size: 24px;
+  color: #89b4fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.form-group {
+  margin-bottom: 25px;
+  text-align: left;
+  position: relative;
+}
+.form-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #a6adc8;
+}
+.form-input {
+  width: 100%;
+  padding: 12px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  border: 2px solid #45475a;
+  background-color: #1e1e2e;
+  color: #cdd6f4;
+  font-size: 14px;
+  transition: border-color 0.3s;
+}
+.form-home:focus {
+  outline: none;
+  border-color: #89b4fa;
+}
+.btn {
+  width: 100%;
+  padding: 12px;
+  background-color: #89b4fa;
+  color: #1e1e2e;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.3s, transform 0.1s;
+}
+.btn:hover {
+  background-color: #74c7ec;
+}
+.btn:active {
+  transform: scale(0.98);
+}
+.refresh-btn {
+  background: none;
+  border: none;
+  color: #a6adc8;
+  cursor: pointer;
+  font-size: 12px;
+  margin-top: 15px;
+  text-decoration: underline;
+}
+.refresh-btn:disabled {
+  color: #585b70;
+  cursor: not-allowed;
+}
+.status-text {
+  font-size: 12px;
+  color: #f38ba8;
+  margin-top: 10px;
+  height: 16px;
+}

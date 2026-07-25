@@ -22,6 +22,35 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.terminal__buttons {
+  display: flex;
+  gap: var(--spacing-2);
+}
+
+.terminal__auto-scroll-btn {
+  padding: var(--spacing-1) var(--spacing-2);
+  font-size: var(--font-size-xs);
+  color: #94a3b8;
+  background-color: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.terminal__auto-scroll-btn:hover {
+  color: #e2e8f0;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.terminal__auto-scroll-btn--active {
+  color: #22c55e;
+  border-color: rgba(34, 197, 94, 0.5);
+  background-color: rgba(34, 197, 94, 0.1);
+}
+
 .terminal__title {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);

@@ -9,15 +9,15 @@ class Task_tupo:
     def run(self):
         type = self.config.get("type")
         # 找模式
-        self.op.图片预加载(f"tasks/突破图片/{type}.png", "tasks/突破图片/退出.png")
+        self.op.图片预加载(f"tasks/突破图片/{type}_1920x1080.png", "tasks/突破图片/退出_1920x1080.png")
         while True:
             self.op.sleep(1)
             result = self.op.找图()
-            if result == None:
+            if not result:
                 continue
-            if f"{type}.png" in result:
-                self.op.点击(*result[f"{type}.png"])
-            elif "退出.png" in result:
+            if f"{type}_1920x1080.png" in result:
+                self.op.点击(*result[f"{type}_1920x1080.png"])
+            elif "退出_1920x1080.png" in result:
                 break
         if type == "个人突破":
             self.refresh_kekkai()
@@ -27,38 +27,41 @@ class Task_tupo:
     def refresh_kekkai(self):
         self.op.log(f"准备运行个人突破")
         refresh = self.config.get("refresh") if self.config else "yes"
-        self.op.图片预加载("tasks/突破图片/入口.png", "tasks/突破图片/奖励.png", "tasks/突破图片/失败.png", 
-                      "tasks/突破图片/进攻.png", "tasks/突破图片/刷新.png", "tasks/突破图片/确定刷新.png", 
-                      "tasks/突破图片/未锁定.png", "tasks/突破图片/退出.png")
+        self.op.图片预加载("tasks/突破图片/入口_1920x1080.png", "tasks/突破图片/奖励_1920x1080.png", "tasks/突破图片/失败_1920x1080.png", 
+                      "tasks/突破图片/进攻_1920x1080.png", "tasks/突破图片/刷新_1920x1080.png", "tasks/突破图片/确定刷新_1920x1080.png", 
+                      "tasks/突破图片/未锁定_1920x1080.png", "tasks/突破图片/退出_1920x1080.png")
         while True:
-            self.op.sleep(1)
+            self.op.check_stop()
             result = self.op.找图()
-            if result == None:
+            if not result:
                 self.op.sleep(3)
                 continue
-            if "未锁定.png" in result:
-                self.op.点击(*result["未锁定.png"])
-            elif "确定刷新.png" in result:
-                self.op.点击(*result["确定刷新.png"])
-            elif "进攻.png" in result:
-                self.op.点击(*result["进攻.png"])
-            elif "奖励.png" in result or "失败.png" in result:
+            if "未锁定_1920x1080.png" in result:
+                self.op.点击(*result["未锁定_1920x1080.png"])
+            elif "确定刷新_1920x1080.png" in result:
+                self.op.点击(*result["确定刷新_1920x1080.png"])
+            elif "进攻_1920x1080.png" in result:
+                self.op.点击(*result["进攻_1920x1080.png"])
+            elif "奖励_1920x1080.png" in result or "失败_1920x1080.png" in result:
                 self.op.点击(*self.end)
-            elif "入口.png" in result and "退出.png" in result:
-                x, y, r = result["入口.png"][0], result["入口.png"][1], result["入口.png"][2]
+            elif "入口_1920x1080.png" in result and "退出_1920x1080.png" in result:
+                x, y, r = result["入口_1920x1080.png"][0], result["入口_1920x1080.png"][1], result["入口_1920x1080.png"][2]
 
                 # 检测突破券数量
                 result_txt = self.op.找字(x1=0.7, y2=0.1, target_txt=r"\d+/30", use_regex=True)
                 if result_txt:
                     a = result_txt[0].split("/")[0]
                     if a == "0":
-                        self.op.点击(*result["退出.png"])
-                        break           
-                    self.op.点击(x-r, y+r, r)
+                        self.op.点击(*result["退出_1920x1080.png"])
+                        self.op.sleep(3)
+                        if "退出_1920x1080.png" not in self.op.找图():
+                            break
+                    else:        
+                        self.op.点击(x-r, y+r, r)
                     
-            elif "刷新.png" in result:
+            elif "刷新_1920x1080.png" in result:
                 if refresh == "yes":
-                    self.op.点击(*result["刷新.png"])
+                    self.op.点击(*result["刷新_1920x1080.png"])
                 else:
                     break
         self.op.log(f"个人突破完成")
@@ -66,24 +69,24 @@ class Task_tupo:
     def refresh_ryou(self):
         self.op.log(f"开始运行寮突破")
         count = 0
-        self.op.图片预加载("tasks/突破图片/入口.png", "tasks/突破图片/奖励.png", "tasks/突破图片/失败.png", 
-                      "tasks/突破图片/进攻.png", "tasks/突破图片/未锁定.png", "tasks/突破图片/退出.png",
-                      "tasks/突破图片/滑块.png")
+        self.op.图片预加载("tasks/突破图片/入口_1920x1080.png", "tasks/突破图片/奖励_1920x1080.png", "tasks/突破图片/失败_1920x1080.png", 
+                      "tasks/突破图片/进攻_1920x1080.png", "tasks/突破图片/未锁定_1920x1080.png", "tasks/突破图片/退出_1920x1080.png",
+                      "tasks/突破图片/滑块_1920x1080.png")
         while True:
-            self.op.sleep(1)
+            self.op.check_stop()
             state = 0
             result = self.op.找图()
-            if result == None:
+            if not result:
                 self.op.sleep(3)
                 continue
-            if "未锁定.png" in result:
-                self.op.点击(*result["未锁定.png"])
-            elif "进攻.png" in result:
-                self.op.点击(*result["进攻.png"])
-            elif "奖励.png" in result or "失败.png" in result:
+            if "未锁定_1920x1080.png" in result:
+                self.op.点击(*result["未锁定_1920x1080.png"])
+            elif "进攻_1920x1080.png" in result:
+                self.op.点击(*result["进攻_1920x1080.png"])
+            elif "奖励_1920x1080.png" in result or "失败_1920x1080.png" in result:
                 self.op.点击(*self.end)
-            elif "入口.png" in result and "退出.png" in result:
-                x, y, r = result["入口.png"][0], result["入口.png"][1], result["入口.png"][2]
+            elif "入口_1920x1080.png" in result and "退出_1920x1080.png" in result:
+                x, y, r = result["入口_1920x1080.png"][0], result["入口_1920x1080.png"][1], result["入口_1920x1080.png"][2]
 
                 # 检测寮突挑战数量
                 result_txt = self.op.找字(x1=0.1, y1=0.5, x2=0.3, y2=0.9)
@@ -104,20 +107,20 @@ class Task_tupo:
                             if a == "0":
                                 state += 2
                     if state == 0:            
-                        self.op.点击(x-r, y+r, r)
+                        self.op.点击(x-2*r, y+r, r)
                     elif state == 1 or state == 3:
                         self.op.log("寮突破任务结束")
                     elif state == 2:
                         if self.config.get("refresh") == "no":
-                            self.op.点击(*result["退出.png"])
+                            self.op.点击(*result["退出_1920x1080.png"])
                             self.op.log(f"寮突破完成")
                             break
                         else:
                             self.op.log("等待寮突破次数增加")
                             self.op.sleep(300)
-            elif "滑块.png" in result and "入口.png" not in result:
+            elif "滑块_1920x1080.png" in result and "入口_1920x1080.png" not in result:
                 count += 1
-                x, y, r = result["滑块.png"][0], result["滑块.png"][1], result["滑块.png"][2]
+                x, y, r = result["滑块_1920x1080.png"][0], result["滑块_1920x1080.png"][1], result["滑块_1920x1080.png"][2]
                 self.op.滑动(x, y, int(x-r/10), y+r, 5)
             if count >= 3:
                 self.op.log("寮突破异常结束：无可突破对象")

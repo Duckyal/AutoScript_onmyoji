@@ -12,7 +12,7 @@ templates = Jinja2Templates(directory="static")
 
 @router.get("/")
 async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request, "time_now": time.time()})
+    return templates.TemplateResponse(request, "index.html", {"request": request, "time_now": time.time()})
 
 @router.get("/api/wallpaper")
 async def wallpaper():
@@ -33,7 +33,7 @@ async def wallpaper():
 @router.get("/home")
 async def home(request: Request, device: str):
     ok, msg = adb_stream.check_adb(device)
-    return templates.TemplateResponse("home.html", {
+    return templates.TemplateResponse(request, "home.html", {
         "request": request, "time_now": time.time(),
         "device": device, "device_ok": ok, "device_msg": msg
     })
@@ -41,7 +41,7 @@ async def home(request: Request, device: str):
 @router.get("/dev")
 async def dev(request: Request, device: str):
     ok, msg = adb_stream.check_adb(device)
-    return templates.TemplateResponse("dev.html", {
+    return templates.TemplateResponse(request, "dev.html", {
         "request": request, "time_now": time.time(),
         "device": device, "device_ok": ok, "device_msg": msg
     })

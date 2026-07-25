@@ -7,14 +7,14 @@
   <!-- 网页图标 -->
   <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
   <!-- CSS 文件 -->
-  <link rel="stylesheet" href="/static/css/variables.css">
-  <link rel="stylesheet" href="/static/css/reset.css">
-  <link rel="stylesheet" href="/static/css/layout.css">
-  <link rel="stylesheet" href="/static/css/header.css">
-  <link rel="stylesheet" href="/static/css/sidebar-task.css">
-  <link rel="stylesheet" href="/static/css/content.css">
-  <link rel="stylesheet" href="/static/css/terminal.css">
-  <link rel="stylesheet" href="/static/css/form.css">
+  <link rel="stylesheet" href="/static/css/home/variables.css?v={{ time_now }}">
+  <link rel="stylesheet" href="/static/css/home/reset.css?v={{ time_now }}">
+  <link rel="stylesheet" href="/static/css/home/layout.css?v={{ time_now }}">
+  <link rel="stylesheet" href="/static/css/home/header.css?v={{ time_now }}">
+  <link rel="stylesheet" href="/static/css/home/sidebar-task.css?v={{ time_now }}">
+  <link rel="stylesheet" href="/static/css/home/content.css?v={{ time_now }}">
+  <link rel="stylesheet" href="/static/css/home/terminal.css?v={{ time_now }}">
+  <link rel="stylesheet" href="/static/css/home/form.css?v={{ time_now }}">
 </head>
 <body>
   <!-- 顶部标题栏 -->
@@ -36,7 +36,7 @@
   <!-- 主容器 -->
   <div class="main-container">
     <!-- 右侧内容区域 -->
-    <div class="content-wrapper">。
+    <div class="content-wrapper">
 
       <!-- 上方 2/3：任务侧边栏和内容 -->
       <div class="content-upper">
@@ -127,6 +127,9 @@
                 <option value="point">荣誉点满</option>
               </select>
               
+              <label class="form-label" for="refresh">重新挑战次数</label>
+              <input class="form-input" type="number" id="refresh" name="refresh" value="3" min="1">
+
               <label class="form-label" for="mode">更多日志</label>
               <select class="form-select" id="mode" name="mode">
                 <option value="less">否</option>
@@ -226,7 +229,10 @@
       <div class="terminal">
         <div class="terminal__header">
           <span class="terminal__title">输出日志</span>
-          <button class="terminal__clear-btn" id="clearTerminalBtn" title="清空日志">清空</button>
+          <div class="terminal__buttons">
+            <button class="terminal__auto-scroll-btn" id="autoScrollBtn" title="滚动切换">滚动</button>
+            <button class="terminal__clear-btn" id="clearTerminalBtn" title="清空日志">清空</button>
+          </div>
         </div>
         <div class="terminal__body" id="terminalBody"></div>
       </div>

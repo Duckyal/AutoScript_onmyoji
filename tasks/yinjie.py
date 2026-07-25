@@ -12,8 +12,13 @@ class Task_yinjie:
 
         # 初始化
         self.结束点击 = (int(self.op.height*4/5), int(self.op.width*2/5), int(self.op.height*1/10))
-        self.加成顺序_源赖光 = ['追斩', '增进', '血啸', '透甲', '附魂', '万刃', '乘胜', '锐利', '绝命', '刃降', '暴击加成', '伤害加成', '速度提升']
-        self.加成顺序_藤原道长 = ['敛神','同调', '涤尘', '弥天', '韵驰', '遏云', '音迹', '泛音', '凝啸', '逐空', '伤害加成', '速度提升', '暴击加成']
+        self.加成顺序_源赖光 = ['追斩', '增进', '血啸', '透甲', '附魂', 
+                              '万刃', '乘胜', '锐利', '绝命', '刃降', 
+                              '暴击加成', '伤害加成', '速度提升']
+        self.加成顺序_藤原道长 = ['同调',                                   # 咏叹+琴月
+                               '泛音', '凝啸', '韵驰', '叩弦', '霆斥',      # 破阵+神鸟
+                               '弥天', '叠辉', '敛神',                     # 咏叹+琴月
+                               '伤害加成', '速度提升', '暴击加成']
 
     def run(self):    # 运行脚本
         mode = self.config.get('type')
@@ -22,27 +27,29 @@ class Task_yinjie:
         elif mode == 'tengyuan':
             self.op.log("运行脚本-藤原道长")
             加成顺序 = self.加成顺序_藤原道长
-            self.op.图片预加载('tasks/英杰图片/挑战2.png', 'tasks/英杰图片/选加成2.png', 'tasks/英杰图片/战斗中2.png',
-                           'tasks/英杰图片/胜利2.png', 'tasks/英杰图片/失败2.png')
-            num = 0
+            self.op.图片预加载('tasks/英杰图片/挑战2_1920x1080.png', 'tasks/英杰图片/选加成2_1920x1080.png', 'tasks/英杰图片/战斗中2_1920x1080.png',
+                           'tasks/英杰图片/胜利2_1920x1080.png', 'tasks/英杰图片/失败2_1920x1080.png', 'tasks/英杰图片/结束_1920x1080.png')
+            num = self.config.get('refresh', 3)
             while True:
                 self.op.check_stop()
-                self.op.sleep(1)
                 result = self.op.找图()
-                if '挑战2.png' in result:
-                    self.op.点击(*result['挑战2.png'])
-                elif '战斗中2.png' in result:
+                if '结束_1920x1080.png' in result:
+                    self.op.log("藤原道长脚本结束")
+                    break
+                if '挑战2_1920x1080.png' in result:
+                    self.op.点击(*result['挑战2_1920x1080.png'])
+                elif '战斗中2_1920x1080.png' in result:
                     self.op.sleep(5)
-                elif '胜利2.png' in result:
+                elif '胜利2_1920x1080.png' in result:
                     self.op.点击(*self.结束点击)
-                elif '失败2.png' in result:
+                elif '失败2_1920x1080.png' in result:
                     self.op.点击(*self.结束点击)
                     num += 1
-                    if num >= 3:
-                        self.op.log("失败3次，退出脚本")
+                    if num >= num:
+                        self.op.log(f"失败重新挑战{num}次，退出脚本", "error")
                         break
-                elif '选加成2.png' in result:
-                    tmp_pos = result['选加成2.png'] # type: ignore
+                elif '选加成2_1920x1080.png' in result:
+                    tmp_pos = result['选加成2_1920x1080.png'] # type: ignore
                     print('选加成界面坐标:', tmp_pos)
                     result = self.op.找字()
                     sign = True

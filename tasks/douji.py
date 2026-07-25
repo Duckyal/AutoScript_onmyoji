@@ -9,18 +9,17 @@ class Task_douji:
     def run(self):
         state = 0
         end = (int(self.op.height*3/5), int(self.op.width*9/10), int(self.op.width*1/10))
-        self.op.图片预加载('tasks/斗技图片/斗技页.png', 'tasks/斗技图片/胜利.png', 'tasks/斗技图片/失败.png',
-                       'tasks/斗技图片/胜场奖励.png', 'tasks/斗技图片/头筹.png', 'tasks/斗技图片/段位晋升.png')
+        self.op.图片预加载('tasks/斗技图片/斗技页_1920x1080.png', 'tasks/斗技图片/胜利_1920x1080.png', 'tasks/斗技图片/失败_1920x1080.png',
+                       'tasks/斗技图片/胜场奖励_1920x1080.png', 'tasks/斗技图片/头筹_1920x1080.png', 'tasks/斗技图片/段位晋升_1920x1080.png')
         while True:
-            self.op.sleep(0.5)
-
+            self.op.check_stop()
             result = self.op.找图()
-            if '头筹.png' in result or '失败.png' in result or '胜利.png' in result or '胜场奖励.png' in result:
+            if '头筹_1920x1080.png' in result or '失败_1920x1080.png' in result or '胜利_1920x1080.png' in result or '胜场奖励_1920x1080.png' in result:
                 self.op.点击(*end)
-            elif '段位晋升.png' in result:
-                self.op.点击(*result['段位晋升.png'])
+            elif '段位晋升_1920x1080.png' in result:
+                self.op.点击(*result['段位晋升_1920x1080.png'])
 
-            elif '斗技页.png' in result:    # 战前准备阶段
+            elif '斗技页_1920x1080.png' in result:    # 战前准备阶段
                 if self.config["count"] == "point":                   
                     result = self.op.找字(y1=0.6, x2=0.3, target_txt=r"[0-9]{2,}/[0-9]{2,}", use_regex=True)
                     if result is None:

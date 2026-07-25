@@ -1,6 +1,7 @@
-fastapi
+fastapi >= 0.68.0
+starlette >= 1.3.0
 uvicorn[standard]
-jinja2
+jinja2 >= 3.0.0
 requests
 uiautomator2
 opencv-python

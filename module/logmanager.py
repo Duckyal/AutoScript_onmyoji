@@ -53,7 +53,7 @@ class WebSocketLogManager:
         - device_id: 设备ID (可选)
         """
         # 本地终端也打印一份（方便你本地调试）
-        print(f"[{level.upper()}] {message}")
+        print(f"[{level.upper()}] [{source if source else ''}] {message}")
         
         # 推送到前端
         self.broadcast(str(message), level, source)

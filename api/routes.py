@@ -24,6 +24,14 @@ def get_stream_status():
     """返回当前视频流的连接状态"""
     return JSONResponse(content=adb_stream.stream_manager.get_status())
 
+@router.post("/api/set_stream_interval")
+async def set_stream_interval(request: Request):
+    """设置截图间隔（秒），范围0.01-0.6"""
+    data = await request.json()
+    interval = data.get("interval", 0.3)
+    adb_stream.stream_manager.set_screenshot_interval(interval)
+    return {"success": True, "message": f"截图间隔已设置为 {interval:.2f} 秒"}
+
 @router.get("/api/device_resolution")
 def get_device_resolution(device_name: str):
     """获取设备的物理分辨率"""
@@ -54,15 +62,26 @@ def start_stream(device_name: str):
 @router.get("/api/stream")
 def video_stream():
     def generate():
+        timeout_count = 0
+        max_timeout = 10
         while True:
             try:
                 frame_bytes = adb_stream.stream_manager.get_frame_jpeg()
+                timeout_count = 0
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n\r\n')
             except ValueError:
-                # 无画面时返回空白占位
+                timeout_count += 1
+                if timeout_count >= max_timeout:
+                    break
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + b'' + b'\r\n\r\n')
+            except Exception as e:
+                print(f"[STREAM ERROR] {e}")
+                timeout_count += 1
+                if timeout_count >= max_timeout:
+                    break
+                time.sleep(0.5)
             time.sleep(0.033)
     return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame")
 
@@ -99,6 +118,8 @@ async def handle_input(
 async def save_screenshot(
     folder_path: str = Form(''),
     file_name: str = Form(''),
+    screen_width: str = Form(''),
+    screen_height: str = Form(''),
     image: UploadFile = File(...)
 ):
     try:
@@ -106,9 +127,18 @@ async def save_screenshot(
             folder_path = platformdirs.user_downloads_dir()
         if not os.path.exists(folder_path): 
             os.makedirs(folder_path, exist_ok=True)
-        if not file_name: 
-            file_name = f"screenshot_{int(time.time())}.png"
-        filepath = os.path.join(folder_path, file_name)
+        
+        # 生成文件名：{用户输入}_{屏幕宽度}x{屏幕高度}.png
+        # 如果用户未输入文件名，使用时间戳
+        base_name = file_name if file_name else f"screenshot_{int(time.time())}"
+        
+        # 如果提供了屏幕尺寸，添加到文件名中
+        if screen_width and screen_height:
+            final_name = f"{base_name}_{screen_width}x{screen_height}.png"
+        else:
+            final_name = f"{base_name}.png"
+        
+        filepath = os.path.join(folder_path, final_name)
 
         with open(filepath, "wb") as buffer:
             buffer.write(await image.read())
@@ -212,22 +242,61 @@ async def stop_task_api(request: Request):
 @router.post("/api/find_image")
 async def find_image(
     device_name: str = Form(''),
-    image: UploadFile = File(...)
+    image: UploadFile = File(None),
+    sim: float = Form(0.90),
+    priority_corner: str = Form('tl'),
+    x1: str = Form('-1'),
+    y1: str = Form('-1'),
+    x2: str = Form('-1'),
+    y2: str = Form('-1')
 ):
+    try:
+        x1_val = float(x1) if '.' in x1 else int(x1)
+        y1_val = float(y1) if '.' in y1 else int(y1)
+        x2_val = float(x2) if '.' in x2 else int(x2)
+        y2_val = float(y2) if '.' in y2 else int(y2)
+    except ValueError:
+        x1_val = y1_val = x2_val = y2_val = -1
+    
     device = ADB(device_name)
-    img_bytes = await image.read()
-    device.图片预加载(img_bytes)
-    result = device.找图()
+    
+    if image and image.filename:
+        img_bytes = await image.read()
+        device.图片预加载(img_bytes)
+    else:
+        main_img = device.获取截图(x1_val, y1_val, x2_val, y2_val)
+        device.图片预加载(main_img)
+    
+    result = device.找图(sim=sim, priority_corner=priority_corner, x1=x1_val, y1=y1_val, x2=x2_val, y2=y2_val)
     print(result)
     return {"result": str(result)}
 
 @router.post("/api/ocr_text")
 async def ocr_text(
     device_name: str = Form(''),
-    image: UploadFile = File(...)
+    image: UploadFile = File(None),
+    target_txt: str = Form(''),
+    use_regex: bool = Form(False),
+    x1: str = Form('-1'),
+    y1: str = Form('-1'),
+    x2: str = Form('-1'),
+    y2: str = Form('-1')
 ):
+    try:
+        x1_val = float(x1) if '.' in x1 else int(x1)
+        y1_val = float(y1) if '.' in y1 else int(y1)
+        x2_val = float(x2) if '.' in x2 else int(x2)
+        y2_val = float(y2) if '.' in y2 else int(y2)
+    except ValueError:
+        x1_val = y1_val = x2_val = y2_val = -1
+    
     device = ADB(device_name)
-    img_bytes = await image.read()
-    result = device.找字(Specified_image=img_bytes)
+    
+    if image and image.filename:
+        img_bytes = await image.read()
+        result = device.找字(Specified_image=img_bytes, target_txt=target_txt, use_regex=use_regex, x1=x1_val, y1=y1_val, x2=x2_val, y2=y2_val)
+    else:
+        result = device.找字(target_txt=target_txt, use_regex=use_regex, x1=x1_val, y1=y1_val, x2=x2_val, y2=y2_val)
+    
     print(result)
     return {"result": str(result)}

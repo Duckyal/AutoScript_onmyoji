@@ -5,22 +5,41 @@
 const TerminalManager = {
   elements: {
     terminalBody: null,
-    clearTerminalBtn: null
+    clearTerminalBtn: null,
+    autoScrollBtn: null
   },
   maxLines: 500,
   websocket: null,
   isConnecting: false,
   hasLoggedDisconnect: false,
+  autoScrollEnabled: true,
 
   init() {
     this.elements.terminalBody = document.getElementById('terminalBody');
     this.elements.clearTerminalBtn = document.getElementById('clearTerminalBtn');
+    this.elements.autoScrollBtn = document.getElementById('autoScrollBtn');
     
     if (!this.elements.terminalBody) return;
     
     if (this.elements.clearTerminalBtn) {
       this.elements.clearTerminalBtn.addEventListener('click', () => this.clear());
     }
+    
+    if (this.elements.autoScrollBtn) {
+      this.elements.autoScrollBtn.addEventListener('click', () => this.toggleAutoScroll());
+      this.updateAutoScrollButton();
+    }
+    
+    // 监听手动滚动，当用户手动滚动时自动关闭自动滚动
+    this.elements.terminalBody.addEventListener('scroll', () => {
+      if (this.autoScrollEnabled) {
+        const isAtBottom = this.elements.terminalBody.scrollHeight - this.elements.terminalBody.scrollTop <= this.elements.terminalBody.clientHeight + 10;
+        if (!isAtBottom) {
+          this.autoScrollEnabled = false;
+          this.updateAutoScrollButton();
+        }
+      }
+    });
     
     this.connectWebSocket();
   },
@@ -71,8 +90,30 @@ const TerminalManager = {
   },
 
   scrollToBottom() {
-    if (this.elements.terminalBody) {
+    if (this.elements.terminalBody && this.autoScrollEnabled) {
       this.elements.terminalBody.scrollTop = this.elements.terminalBody.scrollHeight;
+    }
+  },
+
+  toggleAutoScroll() {
+    this.autoScrollEnabled = !this.autoScrollEnabled;
+    this.updateAutoScrollButton();
+    if (this.autoScrollEnabled) {
+      this.scrollToBottom();
+      this.addLog('已启用自动滚动', 'info');
+    } else {
+      this.addLog('已禁用自动滚动', 'info');
+    }
+  },
+
+  updateAutoScrollButton() {
+    if (!this.elements.autoScrollBtn) return;
+    if (this.autoScrollEnabled) {
+      this.elements.autoScrollBtn.classList.add('terminal__auto-scroll-btn--active');
+      this.elements.autoScrollBtn.setAttribute('title', '自动滚动已开启，点击关闭');
+    } else {
+      this.elements.autoScrollBtn.classList.remove('terminal__auto-scroll-btn--active');
+      this.elements.autoScrollBtn.setAttribute('title', '自动滚动已关闭，点击开启');
     }
   },
 

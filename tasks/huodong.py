@@ -16,18 +16,18 @@ class Task_huodong:
         num = 0
         step = 'start'
         point = None
-        self.op.图片预加载('tasks/活动图片/start.png', 'tasks/活动图片/over.png')
+        self.op.图片预加载('tasks/活动图片/start_1920x1080.png', 'tasks/活动图片/over_1920x1080.png')
         while True:
             self.op.check_stop()
             result = self.op.找图(0.9)
-            if 'start.png' in result:
+            if 'start_1920x1080.png' in result:
                 if point is None:
-                    point = result['start.png']
+                    point = result['start_1920x1080.png']
                 self.op.点击(*point)
                 step = 'start'
-            elif 'over.png' in result:           
+            elif 'over_1920x1080.png' in result:           
                 if point is None:
-                    self.op.点击(*result['over.png'])
+                    self.op.点击(*result['over_1920x1080.png'])
                 else:
                     self.op.点击(point[0], point[1]-100, point[2])
                 if step != 'over':
