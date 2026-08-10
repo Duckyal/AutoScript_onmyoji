@@ -20,7 +20,9 @@
   <!-- 顶部标题栏 -->
   <header class="header">
     <h1 class="header__title">
-      <span class="header__title-main">AutoScript - 主页 &gt;&gt; 设备({{device}}) &gt;&gt; </span>
+      <a class="header__title-main" href="/">AutoScript - 主页</a>
+      <span class="header__title-main"> &gt;&gt; </span>
+      <span class="header__title-main">设备({{device}}) &gt; </span>
       <span class="header__title-process" id="taskName"></span>
     </h1>
 
@@ -59,24 +61,38 @@
             -->
 
           <!-- 御魂配置 -->
-          <div class="task-panel" id="panel-yuhun" data-name="御魂(暂未实现)">
+          <div class="task-panel" id="panel-yuhun" data-name="御魂">
             <h3 class="task-panel__title">御魂配置</h3>
+            <div class="task-panel__notice">
+              <svg class="task-panel__notice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <div class="task-panel__notice-content">
+                <div class="task-panel__notice-title">使用说明</div>
+                <p class="task-panel__notice-text">• 八岐大蛇需要组队(最好双开)，默认邀请队友并锁定阵容</p>
+                <p class="task-panel__notice-text">• 挑战次数设为 0 可无限挑战，建议设置合理次数防止疲劳</p>
+                <p class="task-panel__notice-text">• 请确保已加入对应副本的队伍或准备好单人挑战</p>
+              </div>
+            </div>
+
             <div class="form-group">
-              <label class="form-label" for="layer">挑战层数</label>
-              <select class="form-select" id="layer" name="layer">
-                <option value="10">魂十</option>
-                <option value="11">魂十一</option>
-                <option value="12">魂十二</option>
+              <label class="form-label" for="type">副本类型</label>
+              <select class="form-select" id="type" name="type">
+                <option value="八岐大蛇">八岐大蛇</option>
+                <option value="业原火">业原火</option>
               </select>
               
               <label class="form-label" for="count">挑战次数(0为不限)</label>
-              <input class="form-input" type="number" id="count" name="count" value="100" min="0">
+              <input class="form-input" type="number" id="count" name="count" value="0" min="0">
               
               <label class="form-label" for="team">组队模式</label>
-              <select class="form-select" id="team" name="team">
-                <option value="solo">单人</option>
+              <select class="form-select" id="team" name="team" data-from="type"
+              data-when='{"八岐大蛇":["leader","member"], "业原火":["solo"]}'>
                 <option value="leader">队长</option>
                 <option value="member">队员</option>
+                <option value="solo">单人</option>
               </select>
               
               <label class="form-label" for="mode">更多日志</label>
@@ -90,6 +106,19 @@
           <!-- 御灵配置 -->
           <div class="task-panel" id="panel-yuling" data-name="御灵">
             <h3 class="task-panel__title">御灵配置</h3>
+            <div class="task-panel__notice">
+              <svg class="task-panel__notice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <div class="task-panel__notice-content">
+                <div class="task-panel__notice-title">使用说明</div>
+                <p class="task-panel__notice-text">• 该任务主要面向纯自动挂机阵容</p>
+                <p class="task-panel__notice-text">• 挑战次数 0 为无限次数模式</p>
+              </div>
+            </div>
+
             <div class="form-group">
               <label class="form-label" for="boss">挑战对象</label>
               <select class="form-select" id="boss" name="boss">
@@ -120,15 +149,26 @@
           <!-- 斗技配置 -->
           <div class="task-panel" id="panel-douji" style="display: none;" data-name="斗技">
             <h3 class="task-panel__title">斗技配置</h3>
+            <div class="task-panel__notice">
+              <svg class="task-panel__notice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <div class="task-panel__notice-content">
+                <div class="task-panel__notice-title">使用说明</div>
+                <p class="task-panel__notice-text">• 该任务主要面向斗技纯自动挂机阵容</p>
+                <p class="task-panel__notice-text">• 选择"荣誉点满"模式会持续战斗直到达到每周上限</p>
+                <p class="task-panel__notice-text">• 请确保阵容配置合理，否则可能连跪</p>
+              </div>
+            </div>
+
             <div class="form-group">
               <label class="form-label" for="count">挑战次数</label>
               <select class="form-select" id="count" name="count">
                 <option value="none">不限次数</option>
                 <option value="point">荣誉点满</option>
               </select>
-              
-              <label class="form-label" for="refresh">重新挑战次数</label>
-              <input class="form-input" type="number" id="refresh" name="refresh" value="3" min="1">
 
               <label class="form-label" for="mode">更多日志</label>
               <select class="form-select" id="mode" name="mode">
@@ -141,6 +181,20 @@
           <!-- 突破配置 -->
           <div class="task-panel" id="panel-tupo" style="display: none;" data-name="突破">
             <h3 class="task-panel__title">突破配置</h3>
+            <div class="task-panel__notice">
+              <svg class="task-panel__notice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <div class="task-panel__notice-content">
+                <div class="task-panel__notice-title">使用说明</div>
+                <p class="task-panel__notice-text">• 仅支持全自动挂机阵容</p>
+                <p class="task-panel__notice-text">• 自动刷新：失败后自动刷新对手，建议开启</p>
+                <p class="task-panel__notice-text">• 战斗间隔：建议 10-15 秒，太快可能导致操作失败</p>
+              </div>
+            </div>
+
             <div class="form-group">
               <label class="form-label" for="type">突破类型</label>
               <select class="form-select" id="type" name="type">
@@ -153,6 +207,9 @@
                 <option value="yes">是</option>
                 <option value="no">否</option>
               </select>
+
+              <label class="form-label" for="sleep">战斗间隔（秒）</label>
+              <input class="form-input" type="float" id="sleep" name="sleep" value="15" min="0">
               
               <label class="form-label" for="mode">更多日志</label>
               <select class="form-select" id="mode" name="mode">
@@ -165,6 +222,21 @@
           <!-- 困28配置 -->
           <div class="task-panel" id="panel-k28" style="display: none;" data-name="困28">
             <h3 class="task-panel__title">困28配置</h3>
+            <div class="task-panel__notice">
+              <svg class="task-panel__notice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <div class="task-panel__notice-content">
+                <div class="task-panel__notice-title">使用说明</div>
+                <p class="task-panel__notice-text">• 困28为困难副本第28层，是获取绘卷和狗粮的不二途径</p>
+                <p class="task-panel__notice-text">• 突破上限：清突破卷的阈值，25 为推荐值</p>
+                <p class="task-panel__notice-text">• 轮换狗粮：在每次突破结束后，会自动进行一次狗粮补充</p>
+                <p class="task-panel__notice-text">• 需提前配置好突破和困28的阵容和御魂</p>
+              </div>
+            </div>
+
             <div class="form-group">
               <label class="form-label" for="count">突破上限(0为不清)</label>
               <input class="form-input" type="number" id="count" name="count" value="25" min="0" max="30">
@@ -186,12 +258,39 @@
           <!-- 英杰配置 -->
           <div class="task-panel" id="panel-yinjie" style="display: none;" data-name="英杰">
             <h3 class="task-panel__title">英杰配置</h3>
+            <div class="task-panel__notice">
+              <svg class="task-panel__notice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <div class="task-panel__notice-content">
+                <div class="task-panel__notice-title">使用说明</div>
+                <p class="task-panel__notice-text">• 英杰试炼是高难度 PVE 内容，需要强力阵容</p>
+                <p class="task-panel__notice-text">• 藤原道长已实现，源赖光暂未开放(因为俺源赖光已经刷满了)</p>
+                <p class="task-panel__notice-text">• 容错次数：战斗失败后重试次数，建议 3-5 次</p>
+                <p class="task-panel__notice-text">• 请确保你的式神阵容能够稳定通关</p>
+              </div>
+            </div>
+
             <div class="form-group">
               <label class="form-label" for="type">挑战类型</label>
               <select class="form-select" id="type" name="type">
-                <option value="yuan">源赖光(暂未实现)</option>
-                <option value="tengyuan">藤原道长</option>
+                <option value="源赖光">源赖光(暂未实现)</option>
+                <option value="藤原道长">藤原道长</option>
               </select>        
+
+              <label class="form-label" for="count">技能选择</label>
+              <select class="form-select" id="skill" name="skill" data-from="type" 
+              data-when='{"源赖光": ["源赖光PVE", "源赖光PVP"], "藤原道长": ["藤原PVE", "藤原PVP"]}'>
+                <option value="源赖光PVE">不限技能</option>
+                <option value="源赖光PVP">荣誉点满</option>
+                <option value="藤原PVE">神鸟+破阵</option>
+                <option value="藤原PVP">咏叹+神月</option>
+              </select>
+              
+              <label class="form-label" for="refresh">容错次数</label>
+              <input class="form-input" type="number" id="refresh" name="refresh" value="3" min="1">
               
               <label class="form-label" for="mode">更多日志</label>
               <select class="form-select" id="mode" name="mode">
@@ -204,15 +303,26 @@
           <!-- 活动配置 -->
           <div class="task-panel" id="panel-huodong" style="display: none;" data-name="活动">
             <h3 class="task-panel__title">活动配置</h3>
+            <div class="task-panel__notice">
+              <svg class="task-panel__notice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <div class="task-panel__notice-content">
+                <div class="task-panel__notice-title">使用说明</div>
+                <p class="task-panel__notice-text">• 爬塔：活动期间的简单挑战(不支持复杂的爬塔)</p>
+              </div>
+            </div>
+
             <div class="form-group">
               <label class="form-label" for="type">活动类型</label>
               <select class="form-select" id="type" name="type">
                 <option value="normal">爬塔</option>
-                <option value="else">其他(暂未实现)</option>
               </select>
               
               <label class="form-label" for="count">挑战次数(0为不限)</label>
-              <input class="form-input" type="number" id="count" name="count" value="100" min="0">
+              <input class="form-input" type="number" id="count" name="count" value="50" min="0" step="10">
               
               <label class="form-label" for="mode">更多日志</label>
               <select class="form-select" id="mode" name="mode">
@@ -230,6 +340,9 @@
         <div class="terminal__header">
           <span class="terminal__title">输出日志</span>
           <div class="terminal__buttons">
+            <select class="terminal__filter-select" id="deviceFilter" title="筛选设备">
+              <option value="all">全部设备</option>
+            </select>
             <button class="terminal__auto-scroll-btn" id="autoScrollBtn" title="滚动切换">滚动</button>
             <button class="terminal__clear-btn" id="clearTerminalBtn" title="清空日志">清空</button>
           </div>

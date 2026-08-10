@@ -14,6 +14,10 @@ from module.logmanager import ws_manager
 from module import task_manager
 from module.adb import ADB  # 你原有的 ADB 类
 
+
+# ===============================================================================================================================
+# 设备操作接口
+# ===============================================================================================================================
 # --- 设备与流 ---
 @router.get("/api/get_devices")
 async def api_get_devices():
@@ -145,99 +149,7 @@ async def save_screenshot(
         return {"success": True, "message": "保存截屏成功", "path": filepath}
     except Exception as e:
         return JSONResponse(status_code=500, content={"success": False, "message": str(e)})
-
-
-# --- 任务执行 ---
-from module.decorators import register_stop_signal, cleanup_stop_signal, TaskStoppedException
-
-@router.post("/start")
-async def run_task(request: Request):
-    data = await request.json()
-
-    task_name = data.get("task")
-    device_id = data.get("device")
-    config = data.get("config", {})
-    mode = config.get("mode", "less")
     
-    if not device_id:
-        return JSONResponse(status_code=400, content={"success": False, "message": "设备ID不能为空"})
-
-    try:
-        # 动态导入任务类
-        import importlib
-        module = importlib.import_module(f'tasks.{task_name}')
-        TaskClass = getattr(module, f'Task_{task_name}')
-        
-        # 创建设备对象
-        device = ADB(device_id, mode)
-        
-        # 注册停止信号 (必须)
-        register_stop_signal(device_id)
-        
-        # 实例化任务
-        task_instance = TaskClass(device, config)
-
-        # 定义任务包装器
-        async def task_wrapper():
-            try:
-                await asyncio.to_thread(task_instance.run)
-         
-            except TaskStoppedException:
-                ws_manager.log(f"任务 {device_id} 已被终止", "success")
-                
-            except asyncio.CancelledError:
-                ws_manager.log(f"任务 {device_id} 被取消", "warning")
-                
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                ws_manager.log(f"任务异常: {e}", "error")
-                
-            finally:
-                # 【关键清理】
-                cleanup_stop_signal(device_id)
-                task_manager.active_tasks.pop(device_id, None)
-                task_manager.active_names.pop(device_id, None)
-        
-        # 创建并注册 asyncio 任务
-        task_obj = asyncio.create_task(task_wrapper())
-        task_manager.register_task(device_id, task_obj, task_name)
-        
-        return {"success": True, "message": "任务已开始"}
-        
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return JSONResponse(
-            status_code=500, 
-            content={"success": False, "message": f"启动失败: {str(e)}"}
-        )
-
-# --- 任务状态查询 ---
-@router.get("/api/task_status")
-def get_task_status(device: str):
-    is_running, name = task_manager.is_running(device)
-    return {
-        "running": is_running,
-        "task_name": name
-    }
-
-# --- 停止任务 ---
-from module.decorators import trigger_stop_signal
-
-@router.post("/api/stop_task")
-async def stop_task_api(request: Request):
-    body = await request.json()
-    device_id = body.get("device")
-    
-    if not device_id:
-        return {"success": False, "message": "缺少设备ID"}
-    
-    # 触发停止信号（用于优雅停止，让代码清理资源）
-    trigger_stop_signal(device_id)
-    
-    return {"success": True, "message": "终止指令已发送"}
-
 # ---- 找图/找字接口 ----
 @router.post("/api/find_image")
 async def find_image(
@@ -300,3 +212,97 @@ async def ocr_text(
     
     print(result)
     return {"result": str(result)}
+
+# ===============================================================================================================================
+# 任务执行接口
+# ===============================================================================================================================
+from module.decorators import register_stop_signal, cleanup_stop_signal, TaskStoppedException, cleanup_timeout
+
+@router.post("/api/start_task")
+async def run_task(request: Request):
+    data = await request.json()
+
+    task_name = data.get("task")
+    device_id = data.get("device")
+    config = data.get("config", {})
+    mode = config.get("mode", "less")
+    
+    if not device_id:
+        return JSONResponse(status_code=400, content={"success": False, "message": "设备ID不能为空"})
+
+    try:
+        # 动态导入任务类
+        import importlib
+        module = importlib.import_module(f'tasks.{task_name}')
+        TaskClass = getattr(module, f'Task_{task_name}')
+        
+        # 创建设备对象
+        device = ADB(device_id, mode)
+        
+        # 注册停止信号 (必须)
+        register_stop_signal(device_id)
+        
+        # 实例化任务
+        task_instance = TaskClass(device, config)
+
+        # 定义任务包装器
+        async def task_wrapper():
+            try:
+                await asyncio.to_thread(task_instance.run)
+         
+            except TaskStoppedException:
+                ws_manager.log(f"任务 {device_id} 已被终止", "success")
+                
+            except asyncio.CancelledError:
+                ws_manager.log(f"任务 {device_id} 被取消", "warning")
+                
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                ws_manager.log(f"任务异常: {e}", "error")
+                
+            finally:
+                # 【关键清理】
+                cleanup_stop_signal(device_id)
+                cleanup_timeout(device_id)
+                task_manager.active_tasks.pop(device_id, None)
+                task_manager.active_names.pop(device_id, None)
+        
+        # 创建并注册 asyncio 任务
+        task_obj = asyncio.create_task(task_wrapper())
+        task_manager.register_task(device_id, task_obj, task_name)
+        
+        return {"success": True, "message": "任务已开始"}
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500, 
+            content={"success": False, "message": f"启动失败: {str(e)}"}
+        )
+
+# --- 任务状态查询 ---
+@router.get("/api/task_status")
+def get_task_status(device: str):
+    is_running, name = task_manager.is_running(device)
+    return {
+        "running": is_running,
+        "task_name": name
+    }
+
+# --- 停止任务 ---
+from module.decorators import trigger_stop_signal
+
+@router.post("/api/stop_task")
+async def stop_task_api(request: Request):
+    body = await request.json()
+    device_id = body.get("device")
+    
+    if not device_id:
+        return {"success": False, "message": "缺少设备ID"}
+    
+    # 触发停止信号（用于优雅停止，让代码清理资源）
+    trigger_stop_signal(device_id)
+    
+    return {"success": True, "message": "终止指令已发送"}

@@ -81,10 +81,7 @@ class ADB():
             raise Exception(f"设备 {device_id} 初始化失败") 
 
         # 获取并更新设备分辨率(竖屏状态)
-        w, h = self.d.window_size()
-        self.width = min(w, h)
-        self.height = max(w, h)
-        
+        self.width, self.height = self.d.window_size()
         self.log(f'设备初始化完成: 宽:{self.width}, 高:{self.height}', 'debug')
 
     # 封装module/decorators.py里中断函数的方法
@@ -111,7 +108,7 @@ class ADB():
         """
         # 调用 ws_manager
         if self.log_manager:
-            self.log_manager.log(message, level, self.device_id if source == '' else self.device_id+"_"+ source)
+            self.log_manager.log(message, level, self.device_id)
 
     # ============================================================================================
     # ============================================================================================
@@ -185,6 +182,27 @@ class ADB():
             return pyramid[best_scale]
         
         return None
+    
+    @staticmethod
+    def _calc_click_radius(min_side):
+        """
+        根据目标尺寸计算合理的点击随机偏移半径
+        小图用更小的偏移系数，避免点击偏离目标
+        """
+        if min_side <= 0:
+            return 2
+        if min_side < 30:
+            # 小图（如文字按钮）：偏移半径 = 短边 * 25%，最小 2px
+            r = int(min_side * 0.25)
+            return max(r, 2)
+        elif min_side < 80:
+            # 中等图：偏移半径 = 短边 * 40%
+            r = int(min_side * 0.4)
+            return max(r, 4)
+        else:
+            # 大图：偏移半径 = 短边 * 50%
+            r = int(min_side * 0.5)
+            return max(r, 8)
     def launch_app(self, package_name:str):
         '''
         package_name: 应用包名
@@ -253,11 +271,11 @@ class ADB():
         '''
         self.adb命令行(shell)
     
-    def image_preloading(self, *image_paths):
+    def image_preloading(self, *images):
         '''
-        image_paths: 图片路径列表
+        images: 图片路径、图片对象
         '''
-        self.图片预加载(*image_paths)
+        self.图片预加载(*images)
     
     def find_image(self, sim=0.90, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1):
         '''
@@ -283,6 +301,7 @@ class ADB():
     def 启动应用(self, package_name:str):
         self.d.app_start(package_name)
         self.log('启动应用:{0}'.format(package_name), 'debug')
+        reset_timer(self.device_id)
         
     def 关闭应用(self, package_name:str):
         if package_name == 'all':
@@ -291,10 +310,12 @@ class ADB():
         else:
             self.d.app_stop(package_name)
             self.log('关闭应用:{0}'.format(package_name), 'debug')
+        reset_timer(self.device_id)
                 
     def 息屏(self):
         self.d.screen_off()
         self.log('已息屏', 'debug')
+        reset_timer(self.device_id)
     
     def 截图保存(self, save_path:str=adb_path, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1):
         if x1 != -1:
@@ -317,26 +338,27 @@ class ADB():
             
         cv2.imwrite(save_path, self.d.screenshot(format='opencv')[y1:y2, x1:x2, :]) # type: ignore
         self.log('已保存截图到:{0}'.format(save_path), 'debug')
+        reset_timer(self.device_id)
             
     def 获取截图(self, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1):
         img = self.d.screenshot(format='opencv')
         if x1 != -1:
-            x1 = int(self.height*x1) if isinstance(x1, float) else x1
+            x1 = int(self.width*x1) if isinstance(x1, float) else x1
         else:
             x1 = 0
         if y1 != -1:
-            y1 = int(self.width*y1) if isinstance(y1, float) else y1
+            y1 = int(self.height*y1) if isinstance(y1, float) else y1
         else:
             y1 = 0
 
         if x2 != -1:
-            x2 = int(self.height*x2) if isinstance(x2, float) else x2
+            x2 = int(self.width*x2) if isinstance(x2, float) else x2
         else:
-            x2 = self.height
+            x2 = self.width
         if y2 != -1:
-            y2 = int(self.width*y2) if isinstance(y2, float) else y2
+            y2 = int(self.height*y2) if isinstance(y2, float) else y2
         else:
-            y2 = self.width
+            y2 = self.height
 
         return img[y1:y2, x1:x2, :] # type: ignore
         
@@ -349,13 +371,23 @@ class ADB():
         X, Y = x, y
         self.d.click(X, Y)
         self.log('简单点击{0} {1}'.format(X, Y), 'debug')
-    
+        reset_timer(self.device_id)
+        
     def 点击(self, center_x: int, center_y: int, loc: int, *els):
         '''
         center_x, center_y: 点击的目标中心坐标
         loc: 允许的随机半径范围（安全边界）
         els: 用于接收处理多余参数（如 w, h, sim 等，此处不使用但保证解包不报错）
         '''
+        # 小半径直接点击中心，不做随机偏移
+        if loc <= 3:
+            self.d.touch.down(center_x, center_y)
+            time.sleep(np.random.uniform(0.05, 0.15))
+            self.d.touch.up(center_x, center_y)
+            self.log(f'模拟点击({center_x}, {center_y})', 'debug')
+            reset_timer(self.device_id)
+            return
+        
         # 均值设为 0：因为我们要的是围绕传入的 center 坐标向四周做正态分布扩散
         # 标准差设为 loc / 3.0：确保 99.7% 的点击点严格落在安全半径内
         sigma = max(1.0, loc / 3.0)
@@ -378,6 +410,7 @@ class ADB():
         self.d.touch.up(X, Y)
 
         self.log(f'模拟点击({X}, {Y})', 'debug')
+        reset_timer(self.device_id)
 
     def 长按(self, x:int, y:int, duration:float=1.5, jitter:float=0.1):
         '''
@@ -389,6 +422,7 @@ class ADB():
         time.sleep(duration)
         self.d.touch.up(x, y)
         self.log(f'模拟长按({x}, {y})', 'debug')
+        reset_timer(self.device_id)
 
     def 滑动(self, start_x:int, start_y:int, end_x:int, end_y:int, count:int=30, delay:float=0.01):
         '''
@@ -407,12 +441,14 @@ class ADB():
         # 最后：手指抬起
         self.d.touch.up(end_x, end_y)
         self.log('模拟滑动{0} {1} -> {2} {3}'.format(start_x, start_y, end_x, end_y), 'debug')
+        reset_timer(self.device_id)
         
     def 输入(self, txt:str):
         self.d.clear_text() # 清除输入框所有内容
         self.d.send_keys(txt)
         self.d.send_action("send") # 根据输入框的需求，自动执行回车、搜索等指令,支持 go, search, send, next, done, previous
         self.log('模拟输入{0}'.format(txt), 'debug')
+        reset_timer(self.device_id)
         
     def adb命令行(self, shell:str):
         '''
@@ -422,6 +458,7 @@ class ADB():
         shell = f"adb -s {self.device_id} shell {shell}"
         os.system(shell)
         self.log('执行命令行:{0}'.format(shell), 'debug')
+        reset_timer(self.device_id)
 
     def _parse_screen_from_filename(self, filename):
         """
@@ -543,6 +580,7 @@ class ADB():
                 failed_count += 1
         
         self.log(f"成功预加载了 {len(self.cached_templates)} 张模板图片。", 'debug')
+        reset_timer(self.device_id)
         # 强制重新计算分辨率适配，确保缩放比例与当前屏幕匹配
         self._adapt_resolution()       
 
@@ -625,14 +663,14 @@ class ADB():
         w_resized = int(np.linalg.norm(dst[0] - dst[3]))
         h_resized = int(np.linalg.norm(dst[0] - dst[1]))
         
-        # 计算匹配半径
+        # 计算匹配半径（使用优化的方法，小图偏移更小）
         min_side = min(w_resized, h_resized)
-        r = int((min_side // 2) * 0.8)
-        r = max(r, 5)
+        r = self._calc_click_radius(min_side)
         
         if self.mode == "more":
             self.log(f"找图成功(ORB): {img_name} (匹配率:{match_ratio:.4f})", 'debug')
         
+        # 返回匹配结果(中心点x、中心点y、内切圆半径、匹配图宽、匹配图高、匹配率)
         return img_name, (center_x, center_y, r, w_resized, h_resized, float(match_ratio))
     
     def _match_single_task(self, main_gray, img_name, sim, offset_x=0, offset_y=0, priority_corner='tl'):
@@ -645,7 +683,7 @@ class ADB():
         if not temp_info:
             return None
         if self.current_scale is None:
-            raise RaiseError("未锁定分辨率，请先调用'适配分辨率(adapt_res_everytime)'方法进行测算！")
+            raise TaskStoppedException("未锁定分辨率，请先调用'适配分辨率(adapt_res_everytime)'方法进行测算！")
         
         h_main, w_main = main_gray.shape[:2]
 
@@ -718,10 +756,9 @@ class ADB():
                 center_x = int(match_x + actual_w // 2) + offset_x
                 center_y = int(match_y + actual_h // 2) + offset_y
                 
-                # 计算匹配半径
+                # 计算匹配半径（使用优化的方法，小图偏移更小）
                 min_side = min(actual_w, actual_h)
-                r = int((min_side // 2) * 0.8)
-                r = max(r, 5)
+                r = self._calc_click_radius(min_side)
                 
                 return img_name, (center_x, center_y, r, actual_w, actual_h, float(best_val))
         
@@ -899,8 +936,7 @@ class ADB():
             center_y = int(y + h_resized // 2) + offset_y
             
             min_side = min(w_resized, h_resized)
-            r = int((min_side // 2) * 0.8)
-            r = max(r, 5)
+            r = self._calc_click_radius(min_side)
             return img_name, (center_x, center_y, r, w_resized, h_resized, float(best_val))
         
         return None
@@ -942,12 +978,11 @@ class ADB():
             center_x = int((x + w_resized // 2) / scale_down_x) + offset_x
             center_y = int((y + h_resized // 2) / scale_down_y) + offset_y
             
-            # 计算原始尺寸下的匹配半径
+            # 计算原始尺寸下的匹配半径（使用优化的方法，小图偏移更小）
             orig_w = int(w_resized / scale_down_x)
             orig_h = int(h_resized / scale_down_y)
             min_side = min(orig_w, orig_h)
-            r = int((min_side // 2) * 0.8)
-            r = max(r, 5)
+            r = self._calc_click_radius(min_side)
             return img_name, (center_x, center_y, r, orig_w, orig_h, float(best_val))
         
         return None
@@ -960,7 +995,7 @@ class ADB():
         :param target_image: 指定图片，若为 None 则轮询库中所有图。
         '''
         if not self.cached_templates:
-            raise RaiseError("缓存的模板库为空，请先调用'图片预加载'方法加载！")
+            raise TaskStoppedException("缓存的模板库为空，请先调用'图片预加载'方法加载！")
 
         main_img = self.获取截图()
         main_gray = cv2.cvtColor(main_img, cv2.COLOR_BGR2GRAY)
@@ -1139,12 +1174,14 @@ class ADB():
         :param x1, y1, x2, y2: 截图区域坐标，默认为 -1 表示全屏
         返回值字典： {图名: (匹配坐标x, 匹配坐标y, 推荐点击半径r, 模板宽度, 模板高度, 匹配度)}
         '''
+        check_timeout(self.device_id)
+
         if not self.cached_templates:
-            raise RaiseError("没有可用的模板图片，请先调用'图片预加载'方法加载图片！")
+            raise TaskStoppedException("没有可用的模板图片，请先调用'图片预加载'方法加载图片！")
             
         # 计算偏移量（局部截图相对于全屏的坐标偏移）
-        offset_x = int(self.height * x1) if isinstance(x1, float) and x1 != -1 else (int(x1) if x1 != -1 else 0)
-        offset_y = int(self.width * y1) if isinstance(y1, float) and y1 != -1 else (int(y1) if y1 != -1 else 0)
+        offset_x = int(self.width * x1) if isinstance(x1, float) and x1 != -1 else (int(x1) if x1 != -1 else 0)
+        offset_y = int(self.height * y1) if isinstance(y1, float) and y1 != -1 else (int(y1) if y1 != -1 else 0)
             
         # 已有分辨率，多线程并发极速找所有图
         output = {}
@@ -1161,7 +1198,7 @@ class ADB():
                 img_name, value = result
                 output[img_name] = value
         if output:
-            self.log(str(output), 'debug', source='找图')
+            self.log('找图：'+str(output), 'debug')
         else:
             print(f"[DEBUG] [{self.device_id}_找图] 未匹配到任何图片")
         return output
@@ -1173,6 +1210,7 @@ class ADB():
         target_txt: 目标文本（如果不提供则返回所有文本框信息），支持正则表达式，返回值为匹配到的文本对应坐标或None
         use_regex: 是否启用正则匹配，默认为 False,;为True则返回值将为匹配到的文本列表，为False则返回匹配到的文本及其坐标
         '''
+        check_timeout(self.device_id)
         
         if Specified_image:
             if isinstance(Specified_image, bytes):
@@ -1190,12 +1228,12 @@ class ADB():
         
         # 兜底：如果 RapidOCR 完全没有识别到任何东西
         if not result or not hasattr(result, 'txts') or not result.txts: # type: ignore
-            self.log("未识别到任何文本！", 'debug', source='找字')
+            self.log("找字：未识别到任何文本！", 'debug')
             return None
 
         # 如果是全屏模式（-1 或 None），偏移量就是 0；如果是裁剪区域，偏移量就是左上角起点
-        offset_x = int(self.height * x1) if (isinstance(x1, float) and x1 != -1) else (int(x1) if x1 != -1 else 0)
-        offset_y = int(self.width * y1) if (isinstance(y1, float) and y1 != -1) else (int(y1) if y1 != -1 else 0)
+        offset_x = int(self.width * x1) if (isinstance(x1, float) and x1 != -1) else (int(x1) if x1 != -1 else 0)
+        offset_y = int(self.height * y1) if (isinstance(y1, float) and y1 != -1) else (int(y1) if y1 != -1 else 0)
 
         result_dict = {}
         try:
@@ -1218,7 +1256,7 @@ class ADB():
 
             if target_txt == '':
                 if result_dict:
-                    self.log(str(result_dict), 'debug', source='找字')
+                    self.log('找字：'+str(result_dict), 'debug')
                 return result_dict
             else:
                 # 启用正则匹配
@@ -1229,13 +1267,13 @@ class ADB():
                         if pattern.search(word):
                             matched_results.append(word)
                     if matched_results:
-                        self.log(str(matched_results), 'debug', source='找字')
+                        self.log('找字：'+str(matched_results), 'debug')
                     return matched_results
                 else:
                     if result_dict:
-                        self.log(str(result_dict.get(target_txt, None)), 'debug', source='找字')
+                        self.log('找字：'+str(result_dict.get(target_txt, None)), 'debug')
                     return result_dict.get(target_txt, None)
                 
         except Exception as e:
-            self.log(f"文本识别逻辑处理出错: {e}", 'error', source='找字')
+            self.log(f"文本识别逻辑处理出错: {e}", 'error')
             return None

@@ -1,45 +1,47 @@
+# =============================================================================================
+#                                          超时装饰器
+# =============================================================================================
 import time
-from functools import wraps
 
-class Loop:
-    def __init__(self, timeout=10):
-        '''
-        循环超时装饰器，timeout秒后超时并报错TimeoutError(默认10秒);
-        如果装饰方法返回非None可提前结束循环并返回结果
-        '''
-        self.timeout = timeout
 
-    def __call__(self, func):
-        @wraps(func)
-        def wrapper(instance, *args, **kwargs):
-            start_time = time.time()
-            def is_timeout():
-                return time.time() - start_time > self.timeout
-            # 把 is_timeout 挂到实例上，方法内随时可以取
-            instance._is_timeout = is_timeout
-            while True:
-                result = func(instance, *args, **kwargs)  # ← 只传 instance + 原参数
-                if result is not None:
-                    return result
-                if is_timeout():
-                    raise TimeoutError(f"运行{func.__name__}函数超过 {self.timeout} 秒")
-                time.sleep(0.1)
-        return wrapper
+# 全局超时时间字典：{ device_id: start_time }
+_time_starts = {}
+
+def reset_timer(device_id: str):
+    """重置指定设备的定时器"""
+    global _time_starts
+    _time_starts[device_id] = time.time()
+
+def extra_time(device_id: str, seconds: float):
+    """为指定设备额外增加超时时间"""
+    global _time_starts
+    if device_id not in _time_starts:
+        reset_timer(device_id)
+    else:
+        _time_starts[device_id] += seconds
+
+def check_timeout(device_id: str, seconds: float = 180.0):
+    """检查指定设备是否超时:默认3分钟（180秒）"""
+    global _time_starts
+    if device_id not in _time_starts:
+        reset_timer(device_id)
+    elif time.time() - _time_starts[device_id] > seconds:
+        raise TimeoutError(f"超时：{seconds}秒内未操控设备")
+
+def cleanup_timeout(device_id: str):
+    """清理指定设备的超时记录"""
+    global _time_starts
+    _time_starts.pop(device_id, None)
 
 # =============================================================================================
+#                                        停止信号装饰器
 # =============================================================================================
+import threading
 
-class RaiseError(Exception):
-    '''自定义异常类，用于在装饰器中抛出特定错误'''
-    pass
 
 class TaskStoppedException(Exception):
     """任务停止信号异常"""
     pass
-
-# =============================================================================================
-# =============================================================================================
-import threading
 
 # 全局停止信号字典：{ device_id: threading.Event }
 _stop_signals = {}
@@ -70,20 +72,22 @@ def check_stop(obj):
                 check_stop(self)  # 关键点检查
                 do_something()
     """
-    device_id = getattr(obj, 'device_id', None)
-    if device_id and device_id in _stop_signals:
+    device_id = getattr(obj, 'device_id')
+    if device_id in _stop_signals:
         if _stop_signals[device_id].is_set():
             raise TaskStoppedException("任务被终止")
 
 # 可中断的 sleep
-def interruptible_sleep(seconds: float, obj=None):
+def interruptible_sleep(seconds: float, obj):
     """
     可中断的 sleep，每0.1秒检查一次停止信号
     
     用法：
         interruptible_sleep(5, self)  # 替代 time.sleep(5)
     """
-    import time
+    if seconds >= 30:
+        device_id = getattr(obj, 'device_id')
+        extra_time(device_id, seconds)
     end_time = time.time() + seconds
     
     while time.time() < end_time:
@@ -92,6 +96,7 @@ def interruptible_sleep(seconds: float, obj=None):
         time.sleep(0.1)  # 每次只睡0.1秒，检查更及时
 
 # =============================================================================================
+#                                        轨迹装饰器
 # =============================================================================================
 
 '''

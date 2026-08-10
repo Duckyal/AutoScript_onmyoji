@@ -19,12 +19,23 @@ app.include_router(routes.router)
 
 # 注册 WebSocket
 from fastapi import WebSocket
+import json
+
 @app.websocket("/logs")
 async def websocket_endpoint(websocket: WebSocket):
     await ws_manager.connect(websocket)
     try:
-        while True: await websocket.receive_text()
-    except: ws_manager.disconnect(websocket)
+        while True:
+            data = await websocket.receive_text()
+            # 处理前端发来的控制消息
+            try:
+                msg = json.loads(data)
+                if msg.get('type') == 'clear_history':
+                    ws_manager.clear_history()
+            except json.JSONDecodeError:
+                pass
+    except:
+        ws_manager.disconnect(websocket)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

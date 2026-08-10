@@ -9,10 +9,11 @@
 - **内置任务**：支持御魂、御灵、斗技、突破、英杰、活动、K28 等游戏任务自动化
 - **OCR 识别**：集成 RapidOCR 进行图像文字识别，支持正则匹配和局部区域识别
 - **图像处理**：使用 OpenCV 进行图像分析和模板匹配，支持角优先度选择
-- **实时日志**：WebSocket 实时日志传输和终端样式显示
+- **实时日志**：WebSocket 实时日志传输和终端样式显示，支持自动滚动开关
 - **ADB 集成**：通过 ADB 连接 Android 设备进行自动化操作
 - **可中断任务**：支持优雅停止运行中的任务
 - **多设备支持**：支持同时连接多个设备
+- **依赖单选框**：通过 HTML 属性声明 select 之间的依赖关系，无需编写 JavaScript
 
 ## 安装步骤
 
@@ -143,7 +144,7 @@ adb connect <设备IP>:5555
 
 在首页输入设备序列号后进入设备页，选择任务类型并配置参数：
 
-- **御魂**：自动执行御魂副本，支持选择层数、次数、组队模式（暂不支持）
+- **御魂**：自动执行御魂副本，支持选择副本类型（八岐大蛇、业原火）、挑战层数（魂十/魂十一/魂十二、贪/嗔/痴之阵）、次数、组队模式（暂不支持）
 - **御灵**：自动执行御灵副本，支持选择层数、次数、组队模式
 - **斗技**：自动斗技场对战，支持到达名仕或荣誉点满自动停止
 - **突破**：自动式神突破，支持个人突破和寮突破
@@ -202,7 +203,7 @@ AutoScript_onmyoji/
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/start` | POST | 启动任务 |
+| `/api/start_task` | POST | 启动任务 |
 | `/api/stop_task` | POST | 停止任务 |
 | `/api/task_status` | GET | 查询任务状态 |
 
@@ -262,7 +263,7 @@ class Task_xxx:
         )
         
         while True:
-            self.op.sleep(1)
+            self.op.check_stop()  # 或self.op.sleep(1), 用于检查停止信号(必须)
             result = self.op.找图()
             if result is None or not result:
                 continue
@@ -292,6 +293,22 @@ class Task_xxx:
 <!-- xxx配置 -->
 <div class="task-panel" id="panel-xxx" style="display: none;" data-name="任务名称">
   <h3 class="task-panel__title">任务配置</h3>
+  
+  <!-- 使用说明注释框（可选） -->
+  <div class="task-panel__notice">
+    <svg class="task-panel__notice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="16" x2="12" y2="12"></line>
+      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+    </svg>
+    <div class="task-panel__notice-content">
+      <div class="task-panel__notice-title">使用说明</div>
+      <p class="task-panel__notice-text">• 第一条说明内容</p>
+      <p class="task-panel__notice-text">• 第二条说明内容</p>
+      <p class="task-panel__notice-text">• 第三条说明内容</p>
+    </div>
+  </div>
+  
   <div class="form-group">
     <label class="form-label" for="param1">数字参数</label>
     <input class="form-input" type="text" id="param1" name="param1" value="默认值">
@@ -300,6 +317,19 @@ class Task_xxx:
     <select class="form-select" id="param2" name="param2">
       <option value="option1">选项1</option>
       <option value="option2">选项2</option>
+    </select>
+
+    <label class="form-label" for="param3">依赖子选项参数</label>
+    <select class="form-select" id="param3" name="param3" data-from="param2" 
+    data-when='{"option1": ["option1-1", "option1-2", "option1-3"], "option2": ["option2-1", "option2-2", "option2-3"]}'>
+    <!-- 依赖选项参数1 时显示的子选项参数 --> 
+      <option value="option1-1">选项1-1</option>
+      <option value="option1-2">选项1-2</option>
+      <option value="option1-3">选项1-3</option>
+    <!-- 依赖选项参数2 时显示的子选项参数 --> 
+      <option value="option2-1">选项2-1</option>
+      <option value="option2-2">选项2-2</option>
+      <option value="option2-3">选项2-3</option>
     </select>
     
     <label class="form-label" for="mode">更多日志</label>
@@ -317,10 +347,44 @@ class Task_xxx:
 - 表单元素必须有唯一的 `name` 属性，用于提交任务时传递参数
 - 表单元素必须由 `<div class="form-group">` 包裹
 - 除第一个任务面板外，其他面板应通过 `style="display: none;"` 隐藏
+- **使用说明注释框**（`task-panel__notice`）为可选元素，建议添加以便用户了解配置说明和使用注意事项
 
-#### 4. 任务配置参数
+#### 4. 依赖单选框
 
-所有表单参数会通过 POST 请求发送到 `/start` 接口，在任务类的 `config` 参数中获取：
+支持通过 HTML 属性声明 select 之间的依赖关系，无需编写 JavaScript：
+
+```html
+<!-- 第一层：副本类型 -->
+<select name="type">
+  <option value="八岐大蛇">八岐大蛇</option>
+  <option value="业原火">业原火</option>
+</select>
+
+<!-- 第二层：挑战层数，依赖第一层选择 -->
+<select name="layer" 
+        data-from="type"
+        data-when='{"八岐大蛇":["10","11","12"],"业原火":["tan","chen","chi"]}'>
+  <option value="10">魂十</option>
+  <option value="11">魂十一</option>
+  <option value="12">魂十二</option>
+  <option value="tan">贪之阵</option>
+  <option value="chen">嗔之阵</option>
+  <option value="chi">痴之阵</option>
+</select>
+```
+
+**属性说明**：
+- `data-from`：指定依赖的字段名（name 属性值）
+- `data-when`：JSON 格式的依赖映射，键为依赖字段的值，值为当前字段允许显示的 option value 数组
+
+**工作原理**：
+- 当依赖字段的值变化时，自动过滤当前 select 的选项
+- 只显示 `data-when` 中对应的值
+- 自动将选中值设置为第一个有效选项
+
+#### 5. 任务配置参数
+
+所有表单参数会通过 POST 请求发送到 `/api/start` 接口，在任务类的 `config` 参数中获取：
 
 ```python
 # 前端配置
@@ -332,7 +396,7 @@ count = self.config.get("count", 100)
 mode = self.config.get("mode", "less")
 ```
 
-#### 5. 任务脚本规范
+#### 6. 任务脚本规范
 
 - 创建任务类，接收 `device`（ADB 实例）和 `config`（配置字典）参数
 - 在 `run()` 方法中实现任务逻辑

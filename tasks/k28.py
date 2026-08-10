@@ -8,7 +8,7 @@ class Task_k28:
 
             
     def run(self):
-        end = (int(self.op.height*3/5), int(self.op.width*9/10), int(self.op.width*1/10))
+        end = (int(self.op.width*3/5), int(self.op.height*9/10), int(self.op.height*1/10))
         self.op.图片预加载("tasks/k28图片/k28_1920x1080.png", "tasks/k28图片/退出_1920x1080.png", "tasks/k28图片/确认退出_1920x1080.png")
         while True:
             self.op.sleep(1)
@@ -27,8 +27,11 @@ class Task_k28:
         self.op.图片预加载(*imgs)
         state = 0
         while True:
-            self.op.check_stop()
+            self.op.sleep(0.5)
             result = self.op.找图(priority_corner="br")
+            if result is None:
+                self.op.sleep(2)
+                continue
             if "k28_1920x1080.png" in result and "结界突破_1920x1080.png" in result:
                 if self.config["count"] != 0:   # 有突破券上限
                     result_txt = self.op.找字(x1=0.5, x2=0.7, y2=0.2, target_txt=r".*\d+/30.*", use_regex=True)
@@ -51,7 +54,7 @@ class Task_k28:
                             self.op.点击(*result["k28_1920x1080.png"])
             elif "探索_1920x1080.png" in result:
                 self.op.点击(*result["探索_1920x1080.png"])
-            elif "轮换设置_1920x1080.png" in result and state == 0:
+            elif "轮换设置_1920x1080.png" in result and state == 0 or "自动轮换_1920x1080.png" in result:
                 if "自动轮换_1920x1080.png" in result:
                     self.op.点击(*result["自动轮换_1920x1080.png"])
                     self.op.sleep(1)
@@ -64,19 +67,19 @@ class Task_k28:
             elif "奖励_1920x1080.png" in result:
                 self.op.点击(*end)
             elif "失败_1920x1080.png" in result:
-                from module.decorators import RaiseError
-                raise RaiseError("k28任务异常退出：请检查式神御魂")
+                from module.decorators import TaskStoppedException
+                raise TaskStoppedException("k28任务异常退出：请检查式神御魂", "error")
             elif "通关奖励_1920x1080.png" in result:
                 self.op.点击(*result["通关奖励_1920x1080.png"])
             elif "大怪_1920x1080.png" in result:
                 self.op.点击(*result["大怪_1920x1080.png"])
+                self.op.sleep(0.5)
             elif "小怪_1920x1080.png" in result:
                 self.op.点击(*result["小怪_1920x1080.png"])
-            elif ("大怪_1920x1080.png" not in result or "小怪_1920x1080.png" not in result) and "退出_1920x1080.png" in result and state == 1:
-                self.op.点击(int(self.op.height*7/12), int(self.op.width*8/10), int(self.op.width*1/15))
-                self.op.sleep(3)
-            else:
-                self.op.sleep(5)
+                self.op.sleep(0.5)
+            elif "退出_1920x1080.png" in result and state == 1:
+                self.op.点击(int(self.op.width*0.75), int(self.op.height*0.8), int(self.op.height*0.01))
+                self.op.sleep(2)
             
     def lunhuan(self):
         self.op.图片预加载("tasks/k28图片/全部_1920x1080.png", f"tasks/k28图片/{self.config['lunhuan']}_1920x1080.png", "tasks/k28图片/二星_1920x1080.png", "tasks/k28图片/候补式神_1920x1080.png")

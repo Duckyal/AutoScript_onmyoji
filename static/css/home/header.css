@@ -96,11 +96,13 @@
   }
   
   .header__title-main {
-    display: none;
+    font-size: var(--font-size-base);
   }
   
-  .header__title-separator {
-    display: none !important;
+  /* 手机端隐藏首页链接和首个分隔符，保留设备信息和任务名 */
+  .header__title-main:first-child,
+  .header__title-main:nth-child(2) {
+    display: none;
   }
   
   .header__title-process {

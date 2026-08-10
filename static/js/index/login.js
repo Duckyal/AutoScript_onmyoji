@@ -5,6 +5,22 @@ const statusText = document.getElementById('statusText');
 const loginBtn = document.getElementById('loginBtn');
 const devBtn = document.getElementById('devBtn');
 
+// 当输入框被点击时，强制显示所有设备选项
+deviceInput.addEventListener('click', function () {
+  if (datalist.options.length === 0) return;
+  
+  // 保存当前值
+  const val = deviceInput.value;
+  // 清空值（强制浏览器显示所有选项）
+  deviceInput.value = '';
+  // 下一帧恢复值
+  requestAnimationFrame(() => {
+    deviceInput.value = val;
+    // 选中所有文字，方便用户直接编辑
+    deviceInput.select();
+  });
+});
+
 // 获取设备的函数
 async function fetchDevices() {
   refreshBtn.disabled = true;

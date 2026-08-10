@@ -141,6 +141,11 @@
     padding: var(--spacing-2) var(--spacing-4);
     width: 100%;
   }
+  
+  .task-panel__notice {
+    font-size: var(--font-size-xs);
+    padding: var(--spacing-3);
+  }
 }
 
 /* ==================== 手机横屏 ==================== */
@@ -164,4 +169,49 @@
     padding: var(--spacing-2) var(--spacing-3);
     font-size: var(--font-size-xs);
   }
+  
+  .task-panel__notice {
+    font-size: var(--font-size-xs);
+    padding: var(--spacing-2);
+  }
+}
+
+/* ==================== 任务面板注释 ==================== */
+.task-panel__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-3);
+  padding: var(--spacing-4);
+  margin-bottom: var(--spacing-5);
+  background-color: var(--color-bg-notice, rgba(137, 180, 250, 0.1));
+  border: 1px solid var(--color-border-notice, rgba(137, 180, 250, 0.3));
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.task-panel__notice-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  color: var(--color-primary);
+}
+
+.task-panel__notice-content {
+  flex: 1;
+}
+
+.task-panel__notice-title {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-1);
+}
+
+.task-panel__notice-text {
+  margin: 0;
+}
+
+.task-panel__notice-text + .task-panel__notice-text {
+  margin-top: var(--spacing-2);
 }

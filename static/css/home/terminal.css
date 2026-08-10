@@ -6,8 +6,8 @@
 .terminal {
   display: flex;
   flex-direction: column;
+  min-height: 60px;
   flex: 1;
-  min-height: 150px;
   background-color: var(--color-bg-terminal);
   border-top: 1px solid var(--color-border);
 }
@@ -25,6 +25,35 @@
 .terminal__buttons {
   display: flex;
   gap: var(--spacing-2);
+  align-items: center;
+}
+
+/* 设备筛选下拉框 */
+.terminal__filter-select {
+  padding: var(--spacing-1) var(--spacing-2);
+  font-size: var(--font-size-xs);
+  color: #94a3b8;
+  background-color: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  min-width: 120px;
+}
+
+.terminal__filter-select:hover {
+  color: #e2e8f0;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.terminal__filter-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.terminal__filter-select option {
+  background-color: #1e293b;
+  color: #e2e8f0;
 }
 
 .terminal__auto-scroll-btn {
@@ -125,7 +154,6 @@
 @media (max-width: 480px) {
   .terminal {
     min-height: 120px;
-    max-height: 200px;
   }
   
   .terminal__header {
@@ -136,22 +164,31 @@
     padding: var(--spacing-3);
     font-size: var(--font-size-xs);
   }
+  
+  /* 运行时取消高度限制 */
+  .main-container.task-running .terminal {
+    min-height: 0;
+    max-height: none;
+  }
 }
 
 /* ==================== 响应式 - 平板 ==================== */
 @media (min-width: 481px) and (max-width: 768px) {
   .terminal {
     min-height: 150px;
-    max-height: 250px;
+  }
+  
+  /* 运行时取消高度限制 */
+  .main-container.task-running .terminal {
+    min-height: 0;
+    max-height: none;
   }
 }
 
 /* ==================== 手机横屏 ==================== */
 @media (max-height: 500px) and (orientation: landscape) {
   .terminal {
-    flex: 0 0 30%;
     min-height: 80px;
-    max-height: 120px;
   }
   
   .terminal__header {
@@ -161,5 +198,12 @@
   .terminal__body {
     padding: var(--spacing-2);
     font-size: var(--font-size-xs);
+  }
+  
+  /* 运行时取消高度限制 */
+  .main-container.task-running .terminal {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
   }
 }

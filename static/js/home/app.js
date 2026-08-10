@@ -94,7 +94,7 @@ const App = {
     };
 
     try {
-      const response = await fetch('/start', {
+      const response = await fetch('/api/start_task', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -165,6 +165,8 @@ const App = {
   updateActionButton(isRunning, taskName) {
     if (!this.startBtn) return;
 
+    const mainContainer = document.querySelector('.main-container');
+
     if (isRunning) {
       // --- 状态：正在运行 ---
       this.startBtn.textContent = "终止任务";
@@ -172,8 +174,10 @@ const App = {
       this.startBtn.style.color = "#fff";
       this.startBtn.style.borderColor = "#dc3545";
       
-      // 如果需要显示任务名：
-      // if(taskName) this.startBtn.textContent += ` (${taskName})`;
+      // 添加运行状态类，让终端占 2/3
+      if (mainContainer) {
+        mainContainer.classList.add('task-running');
+      }
 
     } else {
       // --- 状态：空闲 ---
@@ -181,6 +185,11 @@ const App = {
       this.startBtn.style.backgroundColor = ""; // 恢复 CSS 默认
       this.startBtn.style.color = "";
       this.startBtn.style.borderColor = "";
+      
+      // 移除运行状态类，恢复 1/2 布局
+      if (mainContainer) {
+        mainContainer.classList.remove('task-running');
+      }
     }
   }
 };

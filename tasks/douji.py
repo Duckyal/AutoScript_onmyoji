@@ -8,11 +8,11 @@ class Task_douji:
 
     def run(self):
         state = 0
-        end = (int(self.op.height*3/5), int(self.op.width*9/10), int(self.op.width*1/10))
+        end = (int(self.op.width*3/5), int(self.op.height*9/10), int(self.op.height*1/10))
         self.op.图片预加载('tasks/斗技图片/斗技页_1920x1080.png', 'tasks/斗技图片/胜利_1920x1080.png', 'tasks/斗技图片/失败_1920x1080.png',
                        'tasks/斗技图片/胜场奖励_1920x1080.png', 'tasks/斗技图片/头筹_1920x1080.png', 'tasks/斗技图片/段位晋升_1920x1080.png')
         while True:
-            self.op.check_stop()
+            self.op.sleep(0.5)
             result = self.op.找图()
             if '头筹_1920x1080.png' in result or '失败_1920x1080.png' in result or '胜利_1920x1080.png' in result or '胜场奖励_1920x1080.png' in result:
                 self.op.点击(*end)

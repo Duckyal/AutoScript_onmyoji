@@ -18,7 +18,7 @@ class Task_huodong:
         point = None
         self.op.图片预加载('tasks/活动图片/start_1920x1080.png', 'tasks/活动图片/over_1920x1080.png')
         while True:
-            self.op.check_stop()
+            self.op.sleep(0.5)
             result = self.op.找图(0.9)
             if 'start_1920x1080.png' in result:
                 if point is None:

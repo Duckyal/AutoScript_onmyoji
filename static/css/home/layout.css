@@ -19,12 +19,30 @@
   overflow: hidden;
 }
 
-/* 上方 2/3 区域 */
+/* 上方 2/3 区域，终端占 1/3 */
 .content-upper {
   display: flex;
   flex: 2;
   min-height: 0;
   overflow: hidden;
+  transition: flex 0.3s ease, max-height 0.3s ease, opacity 0.3s ease;
+}
+
+/* 默认终端样式 - 占用剩余空间 */
+.terminal {
+  flex: 1;
+  transition: flex 0.3s ease;
+}
+
+/* 任务运行状态：隐藏上方区域，终端占据整个区块 */
+.main-container.task-running .content-upper {
+  display: none !important;
+}
+
+.main-container.task-running .terminal {
+  flex: 1 !important;
+  min-height: 0 !important;
+  max-height: none !important;
 }
 
 /* 内容主区域 */
@@ -45,11 +63,21 @@
   
   .content-upper {
     flex-direction: column;
-    flex: 1;
+    flex: 2;
   }
   
   .content-main {
     padding: var(--spacing-4);
+  }
+  
+  /* 运行时 - 隐藏上方区域 */
+  .main-container.task-running .content-upper {
+    display: none !important;
+    flex: 0 !important;
+  }
+  
+  .main-container.task-running .terminal {
+    flex: 1 !important;
   }
 }
 
@@ -61,11 +89,21 @@
   
   .content-upper {
     flex-direction: row;
-    flex: 1;
+    flex: 2;
   }
   
   .content-main {
     padding: var(--spacing-4);
+  }
+  
+  /* 运行时 - 隐藏上方区域 */
+  .main-container.task-running .content-upper {
+    display: none !important;
+    flex: 0 !important;
+  }
+  
+  .main-container.task-running .terminal {
+    flex: 1 !important;
   }
 }
 
@@ -83,12 +121,22 @@
   
   .content-upper {
     flex-direction: row;
-    flex: 1;
+    flex: 2;
   }
   
   .content-main {
     flex: 1;
     padding: var(--spacing-3);
     overflow-y: auto;
+  }
+  
+  /* 运行时 - 隐藏上方区域 */
+  .main-container.task-running .content-upper {
+    display: none !important;
+    flex: 0 !important;
+  }
+  
+  .main-container.task-running .terminal {
+    flex: 1 !important;
   }
 }

@@ -12,6 +12,40 @@ const TaskManager = {
       this.currentTask = activeItem.dataset.task;
     }
     this.bindEvents();
+    this.initDependencies();
+  },
+
+  initDependencies() {
+    // 遍历所有带 data-from 的元素
+    document.querySelectorAll('[data-from]').forEach(el => {
+      const sourceName = el.dataset.from;
+      const panel = el.closest('.task-panel');
+      const source = panel ? panel.querySelector(`[name="${sourceName}"]`) : null;
+      
+      if (source) {
+        source.addEventListener('change', () => this.updateDependent(el, source));
+        this.updateDependent(el, source); // 初始化执行一次
+      }
+    });
+  },
+
+  updateDependent(el, source) {
+    try {
+      const options = JSON.parse(el.dataset.when);
+      const selected = source.value;
+      const allowed = options[selected] || [];
+      
+      el.querySelectorAll('option').forEach(opt => {
+        opt.style.display = allowed.includes(opt.value) ? '' : 'none';
+      });
+      
+      // 确保选中有效选项
+      if (!allowed.includes(el.value)) {
+        el.value = allowed[0] || '';
+      }
+    } catch (e) {
+      console.error('依赖配置解析错误:', e);
+    }
   },
 
   bindEvents() {

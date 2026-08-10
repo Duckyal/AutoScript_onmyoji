@@ -1,4 +1,5 @@
 import asyncio
+from collections import deque
 from fastapi import WebSocket
 
 class WebSocketLogManager:
@@ -6,6 +7,8 @@ class WebSocketLogManager:
         self.active_connections: list[WebSocket] = []
         # 保存主线程的事件循环引用
         self.loop = None
+        # 保存最近的日志历史（最多50条）
+        self.log_history: deque = deque(maxlen=50)
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -14,6 +17,16 @@ class WebSocketLogManager:
         # connect 是在主线程执行的，这里可以获取到真正的主循环
         if not self.loop:
             self.loop = asyncio.get_running_loop()
+
+        # 新连接建立后，发送历史日志
+        if self.log_history:
+            try:
+                await websocket.send_json({
+                    "type": "history",
+                    "logs": list(self.log_history)
+                })
+            except Exception:
+                pass
 
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
@@ -25,6 +38,9 @@ class WebSocketLogManager:
             "level": level,
             "source": source  # 加上设备ID，前端可以用来区分
         }
+        
+        # 保存到历史记录
+        self.log_history.append(data)
         
         # 如果还没有客户端连进来（loop 为空），或者还没启动，没法发 WebSocket
         if not self.loop:
@@ -53,10 +69,14 @@ class WebSocketLogManager:
         - device_id: 设备ID (可选)
         """
         # 本地终端也打印一份（方便你本地调试）
-        print(f"[{level.upper()}] [{source if source else ''}] {message}")
+        print(f"[{level.upper()}] {'['+source+']' if source else ''} {message}")
         
         # 推送到前端
         self.broadcast(str(message), level, source)
+
+    def clear_history(self):
+        """清空历史日志"""
+        self.log_history.clear()
 
 
 ws_manager = WebSocketLogManager()
