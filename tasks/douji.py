@@ -57,5 +57,10 @@ class Task_douji:
                         self.op.点击(*result['战'])
 
             else:        # 战斗中        
-                self.op.sleep(2)
+                texts = self.op.找字(y1=0.5)
+                if not texts:
+                    continue
+                elif "自动" in texts:
+                    self.op.重置定时器()
+                    self.op.sleep(10)
         

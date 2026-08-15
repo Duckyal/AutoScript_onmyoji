@@ -13,9 +13,14 @@
 <body>
     <header class="header">
       <div class="header-left">
-        <h1>当前连接设备: <span id="device-name">加载中...</span></h1>
+        <h1>
+          <a href="/" style="text-decoration: none; color: #f7f8f7;">AutoScript</a>
+          <span> &gt;&gt; </span>
+          当前连接设备: <span id="device-name">加载中...</span>
+        </h1>
       </div>
-      <div style="display: flex; gap: 8px;">
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <a href="/home?device={{device}}" class="toggle-sidebar-btn" style="text-decoration: none;">转到设备页</a>
         <button class="toggle-sidebar-btn" id="toggle-btn">隐藏工具栏</button>
       </div>
     </header>
@@ -61,13 +66,13 @@
         </div>
 
         <div class="input-group">
-          <label for="folder-path">指定保存文件夹路径：</label>
-          <input type="text" id="folder-path" placeholder="输入保存文件夹路径，默认下载目录" style="cursor: pointer; background-color: #f9fafb;">
+          <label for="folder-path">保存目录路径（默认项目下tasks/tmp目录）：</label>
+          <input type="text" id="folder-path" value="./tasks/tmp">
         </div>
 
         <div class="input-group">
-          <label for="file-name">保存文件名 (不带后缀)：</label>
-          <input type="text" id="file-name" placeholder="例如: my_shot">
+          <label for="file-name">保存文件名 (不带后缀，必填)：</label>
+          <input type="text" id="file-name" placeholder="例如: my_shot" required>
         </div>
 
         <div class="upload-area" style="margin-bottom: 12px;">

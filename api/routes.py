@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse, JSONResponse, Response
 import asyncio
 import time
 import os
-import platformdirs
+from pathlib import Path
 
 router = APIRouter()
 
@@ -24,9 +24,9 @@ async def api_get_devices():
     return {"devices": adb_stream.get_devices()}
 
 @router.get("/api/stream_status")
-def get_stream_status():
-    """返回当前视频流的连接状态"""
-    return JSONResponse(content=adb_stream.stream_manager.get_status())
+def get_stream_status(device_name: str = None):
+    """返回指定设备的视频流连接状态"""
+    return JSONResponse(content=adb_stream.stream_manager.get_status(device_name))
 
 @router.post("/api/set_stream_interval")
 async def set_stream_interval(request: Request):
@@ -64,13 +64,13 @@ def start_stream(device_name: str):
     return {"success": True, "message": "流正在启动..."}
 
 @router.get("/api/stream")
-def video_stream():
+def video_stream(device: str):
     def generate():
         timeout_count = 0
         max_timeout = 10
         while True:
             try:
-                frame_bytes = adb_stream.stream_manager.get_frame_jpeg()
+                frame_bytes = adb_stream.stream_manager.get_frame_jpeg(device)
                 timeout_count = 0
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n\r\n')
@@ -92,7 +92,7 @@ def video_stream():
 @router.get("/api/current_frame")
 def get_current_frame(device_name: str):
     try:
-        jpeg_bytes = adb_stream.stream_manager.get_frame_jpeg()
+        jpeg_bytes = adb_stream.stream_manager.get_frame_jpeg(device_name)
         return Response(content=jpeg_bytes, media_type="image/jpeg")
     except ValueError:
         return JSONResponse(status_code=400, content={"success": False, "message": "画面未加载"})
@@ -127,21 +127,21 @@ async def save_screenshot(
     image: UploadFile = File(...)
 ):
     try:
-        if not folder_path: 
-            folder_path = platformdirs.user_downloads_dir()
-        if not os.path.exists(folder_path): 
+        if not file_name:
+            return JSONResponse(status_code=400, content={"success": False, "message": "文件名不能为空"})
+
+        # 默认保存到项目目录下的 tasks/tmp 目录
+        if not folder_path or folder_path == './tasks/tmp':
+            folder_path = str(Path(__file__).resolve().parent.parent / "tasks" / "tmp")
+        if not os.path.exists(folder_path):
             os.makedirs(folder_path, exist_ok=True)
-        
+
         # 生成文件名：{用户输入}_{屏幕宽度}x{屏幕高度}.png
-        # 如果用户未输入文件名，使用时间戳
-        base_name = file_name if file_name else f"screenshot_{int(time.time())}"
-        
-        # 如果提供了屏幕尺寸，添加到文件名中
         if screen_width and screen_height:
-            final_name = f"{base_name}_{screen_width}x{screen_height}.png"
+            final_name = f"{file_name}_{screen_width}x{screen_height}.png"
         else:
-            final_name = f"{base_name}.png"
-        
+            return JSONResponse(status_code=500, content={"success": False, "message": "未获取到设备屏幕尺寸"})
+
         filepath = os.path.join(folder_path, final_name)
 
         with open(filepath, "wb") as buffer:

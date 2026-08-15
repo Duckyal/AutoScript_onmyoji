@@ -110,6 +110,19 @@ class ADB():
         if self.log_manager:
             self.log_manager.log(message, level, self.device_id)
 
+    def 设置超时时间(self, seconds: float):
+        """
+        设置超时时间
+        :param seconds: 超时时间，单位秒
+        """
+        set_timeout(seconds)
+    
+    def 重置定时器(self):
+        '''
+        重置定时器
+        '''
+        reset_timer(self.device_id)
+
     # ============================================================================================
     # ============================================================================================
 
@@ -203,6 +216,8 @@ class ADB():
             # 大图：偏移半径 = 短边 * 50%
             r = int(min_side * 0.5)
             return max(r, 8)
+        
+    # ==============================英语调用=========================================    
     def launch_app(self, package_name:str):
         '''
         package_name: 应用包名
@@ -301,7 +316,7 @@ class ADB():
     def 启动应用(self, package_name:str):
         self.d.app_start(package_name)
         self.log('启动应用:{0}'.format(package_name), 'debug')
-        reset_timer(self.device_id)
+        self.重置定时器()
         
     def 关闭应用(self, package_name:str):
         if package_name == 'all':
@@ -310,12 +325,12 @@ class ADB():
         else:
             self.d.app_stop(package_name)
             self.log('关闭应用:{0}'.format(package_name), 'debug')
-        reset_timer(self.device_id)
+        self.重置定时器()
                 
     def 息屏(self):
         self.d.screen_off()
         self.log('已息屏', 'debug')
-        reset_timer(self.device_id)
+        self.重置定时器()
     
     def 截图保存(self, save_path:str=adb_path, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1):
         if x1 != -1:
@@ -338,7 +353,7 @@ class ADB():
             
         cv2.imwrite(save_path, self.d.screenshot(format='opencv')[y1:y2, x1:x2, :]) # type: ignore
         self.log('已保存截图到:{0}'.format(save_path), 'debug')
-        reset_timer(self.device_id)
+        self.重置定时器()
             
     def 获取截图(self, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1):
         img = self.d.screenshot(format='opencv')
@@ -371,7 +386,7 @@ class ADB():
         X, Y = x, y
         self.d.click(X, Y)
         self.log('简单点击{0} {1}'.format(X, Y), 'debug')
-        reset_timer(self.device_id)
+        self.重置定时器()
         
     def 点击(self, center_x: int, center_y: int, loc: int, *els):
         '''
@@ -385,7 +400,7 @@ class ADB():
             time.sleep(np.random.uniform(0.05, 0.15))
             self.d.touch.up(center_x, center_y)
             self.log(f'模拟点击({center_x}, {center_y})', 'debug')
-            reset_timer(self.device_id)
+            self.重置定时器()
             return
         
         # 均值设为 0：因为我们要的是围绕传入的 center 坐标向四周做正态分布扩散
@@ -410,7 +425,7 @@ class ADB():
         self.d.touch.up(X, Y)
 
         self.log(f'模拟点击({X}, {Y})', 'debug')
-        reset_timer(self.device_id)
+        self.重置定时器()
 
     def 长按(self, x:int, y:int, duration:float=1.5, jitter:float=0.1):
         '''
@@ -422,7 +437,7 @@ class ADB():
         time.sleep(duration)
         self.d.touch.up(x, y)
         self.log(f'模拟长按({x}, {y})', 'debug')
-        reset_timer(self.device_id)
+        self.重置定时器()
 
     def 滑动(self, start_x:int, start_y:int, end_x:int, end_y:int, count:int=30, delay:float=0.01):
         '''
@@ -441,14 +456,14 @@ class ADB():
         # 最后：手指抬起
         self.d.touch.up(end_x, end_y)
         self.log('模拟滑动{0} {1} -> {2} {3}'.format(start_x, start_y, end_x, end_y), 'debug')
-        reset_timer(self.device_id)
+        self.重置定时器()
         
     def 输入(self, txt:str):
         self.d.clear_text() # 清除输入框所有内容
         self.d.send_keys(txt)
         self.d.send_action("send") # 根据输入框的需求，自动执行回车、搜索等指令,支持 go, search, send, next, done, previous
         self.log('模拟输入{0}'.format(txt), 'debug')
-        reset_timer(self.device_id)
+        self.重置定时器()
         
     def adb命令行(self, shell:str):
         '''
@@ -458,7 +473,7 @@ class ADB():
         shell = f"adb -s {self.device_id} shell {shell}"
         os.system(shell)
         self.log('执行命令行:{0}'.format(shell), 'debug')
-        reset_timer(self.device_id)
+        self.重置定时器()
 
     def _parse_screen_from_filename(self, filename):
         """
@@ -580,7 +595,7 @@ class ADB():
                 failed_count += 1
         
         self.log(f"成功预加载了 {len(self.cached_templates)} 张模板图片。", 'debug')
-        reset_timer(self.device_id)
+        self.重置定时器()
         # 强制重新计算分辨率适配，确保缩放比例与当前屏幕匹配
         self._adapt_resolution()       
 

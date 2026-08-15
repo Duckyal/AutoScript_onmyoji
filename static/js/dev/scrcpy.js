@@ -113,7 +113,7 @@ statusDiv.textContent = '正在初始化...';
 streamContainer.appendChild(statusDiv);
 
 function updateStreamStatus() {
-    fetch('/api/stream_status')
+    fetch(`/api/stream_status?device_name=${deviceName}`)
         .then(res => res.json())
         .then(data => {
             statusDiv.textContent = data.message || '未知状态';
@@ -534,13 +534,19 @@ function sendInputAction(endCoords, duration, distX, distY) {
 
 saveBtn.addEventListener('click', async () => {
     if (!croppedBlob) { alert('请先框选截图或上传图片'); return; }
-    const folderPath = folderPathInput.value;
-    const fileName = fileNameInput.value;
+    const folderPath = folderPathInput.value.trim();
+    const fileName = fileNameInput.value.trim();
+
+    if (!fileName) { alert('请输入保存文件名'); return; }
+    if (folderPath && !/^[a-zA-Z0-9_\u4e00-\u9fa5\-\/.]+$/.test(folderPath)) {
+        alert('文件夹路径只能包含中英文、数字、下划线、连字符、斜杠和点');
+        return;
+    }
 
     const formData = new FormData();
     formData.append('folder_path', folderPath);
     formData.append('file_name', fileName);
-    formData.append('image', croppedBlob, fileName || 'screenshot.png');
+    formData.append('image', croppedBlob, fileName);
     
     // 获取设备屏幕尺寸（从视频流图片获取实际尺寸）
     const streamImg = document.getElementById('stream-img');

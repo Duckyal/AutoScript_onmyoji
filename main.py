@@ -10,6 +10,14 @@ from module.logmanager import ws_manager
 
 app = FastAPI(title="阴阳师自动化")
 
+# 清除 tasks/tmp 目录下的所有文件
+import os
+import shutil
+
+if os.path.exists("tasks/tmp"):
+    shutil.rmtree("tasks/tmp")
+os.makedirs("tasks/tmp")
+
 # 静态文件
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

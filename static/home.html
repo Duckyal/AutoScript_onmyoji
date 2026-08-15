@@ -20,18 +20,21 @@
   <!-- 顶部标题栏 -->
   <header class="header">
     <h1 class="header__title">
-      <a class="header__title-main" href="/">AutoScript - 主页</a>
+      <a class="header__title-main" href="/">AutoScript</a>
       <span class="header__title-main"> &gt;&gt; </span>
       <span class="header__title-main">设备({{device}}) &gt; </span>
       <span class="header__title-process" id="taskName"></span>
     </h1>
-
-    <button class="header__start-btn" id="startBtn">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-        <polygon points="5,3 19,12 5,21"></polygon>
-      </svg>
-      执行
-    </button>
+    
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <a href="/dev?device={{device}}" class="header__start-btn" >转到开发</a>
+      <button class="header__start-btn" id="startBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="5,3 19,12 5,21"></polygon>
+        </svg>
+        执行
+      </button>
+    </div>
     
   </header>
 
@@ -319,6 +322,7 @@
               <label class="form-label" for="type">活动类型</label>
               <select class="form-select" id="type" name="type">
                 <option value="normal">爬塔</option>
+                <option value="type1">修行合训</option>
               </select>
               
               <label class="form-label" for="count">挑战次数(0为不限)</label>

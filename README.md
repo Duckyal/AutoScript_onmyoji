@@ -9,10 +9,11 @@
 - **内置任务**：支持御魂、御灵、斗技、突破、英杰、活动、K28 等游戏任务自动化
 - **OCR 识别**：集成 RapidOCR 进行图像文字识别，支持正则匹配和局部区域识别
 - **图像处理**：使用 OpenCV 进行图像分析和模板匹配，支持角优先度选择
-- **实时日志**：WebSocket 实时日志传输和终端样式显示，支持自动滚动开关
+- **实时日志**：WebSocket 实时日志传输和终端样式显示，支持自动滚动开关、历史日志加载、设备筛选
 - **ADB 集成**：通过 ADB 连接 Android 设备进行自动化操作
 - **可中断任务**：支持优雅停止运行中的任务
-- **多设备支持**：支持同时连接多个设备
+- **多设备支持**：支持同时连接多个设备，多设备同时投屏互不干扰
+- **页面快速切换**：设备页与开发控制台之间可直接切换，无需返回首页
 - **依赖单选框**：通过 HTML 属性声明 select 之间的依赖关系，无需编写 JavaScript
 
 ## 安装步骤
@@ -176,9 +177,9 @@ AutoScript_onmyoji/
 │   └── ui.py               # UI 页面路由
 ├── module/                 # 核心模块
 │   ├── adb.py              # ADB 设备管理（截图、点击、找图、找字）
-│   ├── adb_stream.py       # uiautomator2 视频流管理（截屏方式）
+│   ├── adb_stream.py       # 视频流管理（截屏方式，支持多设备同时投屏）
 │   ├── decorators.py       # 装饰器工具（停止信号、可中断 sleep）
-│   ├── logmanager.py       # WebSocket 日志管理器
+│   ├── logmanager.py       # WebSocket 日志管理器（实时推送、历史日志存储）
 │   └── task_manager.py     # 任务管理器（协程管理、状态查询）
 ├── static/                 # 静态资源（前端页面）
 │   ├── css/                # 样式文件
@@ -194,6 +195,7 @@ AutoScript_onmyoji/
     ├── yinjie.py           # 英杰任务
     ├── huodong.py          # 活动任务
     ├── k28.py              # K28 任务
+    ├── tmp/                # 临时文件目录（开发页截图默认保存目录）
     └── 图片资源目录/        # 各任务图片模板
 ```
 
@@ -226,10 +228,10 @@ AutoScript_onmyoji/
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/api/stream` | GET | 获取视频流（MJPEG 格式） |
-| `/api/start_stream` | GET | 启动视频流 |
-| `/api/stream_status` | GET | 获取流状态 |
-| `/api/set_stream_interval` | POST | 设置截图间隔（控制帧率） |
+| `/api/stream` | GET | 获取视频流（MJPEG 格式，需传 `device` 参数） |
+| `/api/start_stream` | GET | 启动视频流（需传 `device_name` 参数） |
+| `/api/stream_status` | GET | 获取流状态（需传 `device_name` 参数） |
+| `/api/set_stream_interval` | POST | 设置截图间隔（控制帧率，全局生效） |
 
 ### 输入控制
 
@@ -400,7 +402,8 @@ mode = self.config.get("mode", "less")
 
 - 创建任务类，接收 `device`（ADB 实例）和 `config`（配置字典）参数
 - 在 `run()` 方法中实现任务逻辑
-- 使用 `self.op.sleep()` 替代 `time.sleep()`（支持中断）
+- 使用 module/adb.py 中`ADB().sleep()` 替代 `time.sleep()`（支持中断，和超时检查）
+- 超时检查：在180秒内未进行滑动点击等操作将超时，用`ADB().sleep()`休眠10s以上将不计入超时时间
 - 使用 `self.op.log()` 进行日志输出
 - 使用 `self.op.图片预加载()` 预加载模板图片
 - 使用 `self.op.找图()` 和 `self.op.找字()` 进行图像和文字识别
@@ -422,8 +425,8 @@ mode = self.config.get("mode", "less")
 
 - **拉框截图模式**：勾选后可在视频流上框选区域，中键切换
 - **截图间隔**：设置视频流帧率（1-60 毫秒，对应约 16-1000 fps）
-- **指定保存文件夹路径**：设置截图保存位置，默认下载目录
-- **保存文件名**：输入文件名（不带后缀），后台自动添加屏幕参数和后缀
+- **指定保存文件夹路径**：设置截图保存位置，默认保存到项目下 `tasks/tmp` 目录
+- **保存文件名**：输入文件名（不带后缀，必填），后台自动添加屏幕参数和后缀
 
 ##### 3. 区域参数
 
@@ -453,8 +456,8 @@ mode = self.config.get("mode", "less")
 #### 使用示例
 
 **截图保存**：
-1. 输入保存文件路径（可选，默认电脑的下载目录）
-2. 输入保存文件名（如 `my_shot`）
+1. 输入保存文件路径（可选，默认项目下 `tasks/tmp` 目录）
+2. 输入保存文件名（如 `my_shot`，必填）
 3. 框选区域或手动输入截图区域
 4. 点击"保存"按钮
 5. 截图将保存为 `my_shot_1920x1080.png`（自动添加屏幕参数）
@@ -518,7 +521,7 @@ if result:
 - 游戏版本更新可能影响脚本兼容性
 - 使用自动化脚本时请遵守游戏规则
 - 建议在测试环境先验证脚本功能
-- 截图默认保存到系统下载目录
+- 截图默认保存到项目下 `tasks/tmp` 目录
 - 支持 Windows、Linux、macOS 多平台
 - Windows运行时可能缺少动态链接库，需要安装[Visual C++ 运行库](https://aka.ms/vs/17/release/vc_redist.x64.exe)
 

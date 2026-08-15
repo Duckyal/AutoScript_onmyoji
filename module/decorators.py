@@ -6,6 +6,12 @@ import time
 
 # 全局超时时间字典：{ device_id: start_time }
 _time_starts = {}
+_timeout_seconds = 180.0
+
+def set_timeout(seconds: float):
+    """设置全局超时时间"""
+    global _timeout_seconds
+    _timeout_seconds = seconds
 
 def reset_timer(device_id: str):
     """重置指定设备的定时器"""
@@ -20,13 +26,13 @@ def extra_time(device_id: str, seconds: float):
     else:
         _time_starts[device_id] += seconds
 
-def check_timeout(device_id: str, seconds: float = 180.0):
+def check_timeout(device_id: str):
     """检查指定设备是否超时:默认3分钟（180秒）"""
     global _time_starts
     if device_id not in _time_starts:
         reset_timer(device_id)
-    elif time.time() - _time_starts[device_id] > seconds:
-        raise TimeoutError(f"超时：{seconds}秒内未操控设备")
+    elif time.time() - _time_starts[device_id] > _timeout_seconds:
+        raise TimeoutError(f"超时：{_timeout_seconds}秒内未操控设备")
 
 def cleanup_timeout(device_id: str):
     """清理指定设备的超时记录"""
@@ -85,7 +91,7 @@ def interruptible_sleep(seconds: float, obj):
     用法：
         interruptible_sleep(5, self)  # 替代 time.sleep(5)
     """
-    if seconds >= 30:
+    if seconds >= 10:
         device_id = getattr(obj, 'device_id')
         extra_time(device_id, seconds)
     end_time = time.time() + seconds
