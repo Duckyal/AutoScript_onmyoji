@@ -2,7 +2,10 @@ const urlParams = new URLSearchParams(window.location.search);
 const deviceName = urlParams.get('device') || '未指定设备';
 document.getElementById('device-name').textContent = deviceName;
 
-fetch(`/api/start_stream?device_name=${deviceName}`).catch(err => console.error(err));
+// 启动后端视频流（scrcpy 模式由 WebSocket 端点按需启动，MJPEG 模式在此启动）
+if (!(typeof ScrcpyWebCodecs !== 'undefined' && ScrcpyWebCodecs.isSupported())) {
+    fetch(`/api/start_stream?device_name=${deviceName}`).catch(err => console.error(err));
+}
 
 const sidebar = document.getElementById('sidebar');
 const toggleBtn = document.getElementById('toggle-btn');
@@ -13,7 +16,84 @@ toggleBtn.addEventListener('click', () => {
 
 const streamContainer = document.getElementById('stream-container');
 const streamImg = document.getElementById('stream-img');
+const streamCanvas = document.getElementById('stream-canvas');
 const overlay = document.getElementById('selection-overlay');
+
+// ===== WebCodecs / scrcpy 诊断 =====
+// WebCodecs API (VideoDecoder) 要求 安全上下文（HTTPS 或 localhost/127.0.0.1）
+// 使用局域网 IP 或 0.0.0.0 访问时，即使浏览器支持 VideoDecoder 也会返回 undefined
+//
+// 特殊处理：若主机名是 0.0.0.0，自动重定向到 localhost（同机同端口同路径），
+// 这是启用 scrcpy 的最低成本方案。
+if (location.hostname === '0.0.0.0' && location.protocol === 'http:') {
+    const newUrl = `http://localhost:${location.port}${location.pathname}${location.search}${location.hash}`;
+    console.warn('[scrcpy] 检测到 0.0.0.0 访问，无法启用 WebCodecs，自动重定向到 localhost:', newUrl);
+    location.replace(newUrl);
+}
+
+const _scrcpyDiagnostics = {
+    scrcpyModuleLoaded: typeof ScrcpyWebCodecs !== 'undefined',
+    secureContext: window.isSecureContext,
+    location: `${location.protocol}//${location.hostname}${location.port ? ':' + location.port : ''}`,
+    videoDecoder: typeof VideoDecoder !== 'undefined',
+    ua: navigator.userAgent.split(') ')[0] + ')',
+};
+
+const _canUseScrcpy = (() => {
+    if (!_scrcpyDiagnostics.scrcpyModuleLoaded) return { ok: false, reason: 'scrcpy 模块未加载' };
+    if (!_scrcpyDiagnostics.videoDecoder) {
+        if (!_scrcpyDiagnostics.secureContext) {
+            return { ok: false, reason: '非安全上下文(需 localhost/HTTPS)' };
+        }
+        return { ok: false, reason: '浏览器不支持 WebCodecs' };
+    }
+    return { ok: true, reason: '' };
+})();
+
+// 控制台诊断（F12 可查看）
+console.log('[scrcpy] 诊断:', _scrcpyDiagnostics, '可用性:', _canUseScrcpy);
+
+const useScrcpy = _canUseScrcpy.ok;
+
+// 视频流模式徽章
+const streamModeBadge = document.getElementById('stream-mode-badge');
+// MJPEG 截图间隔控件组（scrcpy 模式下隐藏）
+const mjpegIntervalGroup = document.getElementById('mjpeg-interval-group');
+
+/** 设置视频流模式徽章 (正常状态半透明, 避免遮挡视频流; 异常状态高亮显示) */
+function setStreamModeBadge(text, color) {
+    if (!streamModeBadge) return;
+    streamModeBadge.textContent = `流模式: ${text}`;
+    streamModeBadge.style.backgroundColor = color;
+    // 绿色 = 正常, 半透明不遮挡; 其他颜色 = 异常, 完全显示
+    const isNormal = color === '#22c55e';
+    streamModeBadge.style.opacity = isNormal ? '0.25' : '1';
+    streamModeBadge.style.pointerEvents = 'none';
+}
+
+// 初始化模式徽章和控件可见性（在 initStream 调用前先展示一次状态）
+if (useScrcpy) {
+    setStreamModeBadge('scrcpy H.264 硬解', '#22c55e');
+    if (mjpegIntervalGroup) mjpegIntervalGroup.style.display = 'none';
+} else {
+    // MJPEG 模式下，徽章直接显示未启用 scrcpy 的原因，方便排查
+    setStreamModeBadge(`MJPEG 截图 (${_canUseScrcpy.reason})`, '#3b82f6');
+    // 让徽章上原因长文字不换行，用更小字号展示
+    if (streamModeBadge) streamModeBadge.style.whiteSpace = 'nowrap';
+}
+
+/** 获取当前激活的流元素（img 或 canvas） */
+function getStreamElement() {
+    return useScrcpy ? streamCanvas : streamImg;
+}
+
+/** 获取流的原始（视频/位图）分辨率 */
+function getStreamNaturalSize() {
+    if (useScrcpy) {
+        return { width: streamCanvas.width || 0, height: streamCanvas.height || 0 };
+    }
+    return { width: streamImg.naturalWidth || 0, height: streamImg.naturalHeight || 0 };
+}
 const screenshotMode = document.getElementById('screenshot-mode');
 const cropPreview = document.getElementById('crop-preview');
 const folderPathInput = document.getElementById('folder-path');
@@ -113,6 +193,37 @@ statusDiv.textContent = '正在初始化...';
 streamContainer.appendChild(statusDiv);
 
 function updateStreamStatus() {
+    if (useScrcpy) {
+        // scrcpy 模式: 用 ScrcpyWebCodecs 实际状态, 不查询 MJPEG 截图流
+        const running = ScrcpyWebCodecs.running;
+        const decoderState = ScrcpyWebCodecs.decoder ? ScrcpyWebCodecs.decoder.state : 'null';
+        const frames = ScrcpyWebCodecs.frameCount;
+
+        if (running && ScrcpyWebCodecs.decoderConfigured && decoderState === 'configured') {
+            statusDiv.textContent = `scrcpy 已连接 (${frames}帧)`;
+            statusDiv.style.backgroundColor = 'rgba(40, 167, 69, 0.9)';
+            statusDiv.style.opacity = '0';  // 正常时隐藏
+            setStreamModeBadge('scrcpy H.264 硬解', '#22c55e');
+        } else if (running && !ScrcpyWebCodecs.decoderConfigured) {
+            statusDiv.textContent = 'scrcpy 等待关键帧...';
+            statusDiv.style.backgroundColor = 'rgba(255, 193, 7, 0.9)';
+            statusDiv.style.opacity = '1';
+            setStreamModeBadge('scrcpy 等待关键帧', '#f59e0b');
+        } else if (!running) {
+            statusDiv.textContent = 'scrcpy 流已断开';
+            statusDiv.style.backgroundColor = 'rgba(220, 53, 69, 0.9)';
+            statusDiv.style.opacity = '1';
+            setStreamModeBadge('scrcpy 已断开', '#ef4444');
+        } else {
+            statusDiv.textContent = `scrcpy 解码器: ${decoderState}`;
+            statusDiv.style.backgroundColor = 'rgba(255, 193, 7, 0.9)';
+            statusDiv.style.opacity = '1';
+            setStreamModeBadge('scrcpy 解码中', '#f59e0b');
+        }
+        return;
+    }
+
+    // MJPEG 模式: 查询截图流状态
     fetch(`/api/stream_status?device_name=${deviceName}`)
         .then(res => res.json())
         .then(data => {
@@ -143,13 +254,43 @@ let streamRetryCount = 0;
 const MAX_RETRY_COUNT = 5;
 
 function initStream() {
+    if (useScrcpy) {
+        // scrcpy H.264 模式
+        streamImg.style.display = 'none';
+        streamCanvas.style.display = 'block';
+        if (mjpegIntervalGroup) mjpegIntervalGroup.style.display = 'none';
+        setStreamModeBadge('scrcpy 连接中', '#f59e0b');
+        statusDiv.textContent = 'scrcpy 连接中...';
+        statusDiv.style.backgroundColor = 'rgba(255, 193, 7, 0.9)';
+        statusDiv.style.opacity = '1';
+
+        const started = ScrcpyWebCodecs.start(deviceName, 'stream-canvas');
+        if (!started) {
+            // 启动失败，回退到 MJPEG
+            console.warn('[scrcpy] 启动失败，回退到 MJPEG');
+            streamCanvas.style.display = 'none';
+            streamImg.style.display = 'block';
+            if (mjpegIntervalGroup) mjpegIntervalGroup.style.display = '';
+            setStreamModeBadge('MJPEG 截图 (回退)', '#f59e0b');
+            _initMjpegStream();
+        } else {
+            setStreamModeBadge('scrcpy H.264 硬解', '#22c55e');
+            // 状态由 updateStreamStatus() 统一管理, 不再重复轮询
+        }
+        return;
+    }
+    setStreamModeBadge('MJPEG 截图', '#3b82f6');
+    _initMjpegStream();
+}
+
+function _initMjpegStream() {
     streamImg.onerror = function() {
         streamRetryCount++;
         if (streamRetryCount <= MAX_RETRY_COUNT) {
             statusDiv.textContent = `连接失败，${streamRetryCount}/${MAX_RETRY_COUNT} 重试中...`;
             statusDiv.style.backgroundColor = 'rgba(255, 193, 7, 0.9)';
             statusDiv.style.opacity = '1';
-            
+
             setTimeout(() => {
                 streamImg.src = `/api/stream?device=${deviceName}&_t=${Date.now()}`;
             }, 2000);
@@ -158,7 +299,7 @@ function initStream() {
             statusDiv.style.backgroundColor = 'rgba(220, 53, 69, 0.9)';
         }
     };
-    
+
     streamImg.onload = function() {
         streamRetryCount = 0;
         if (statusDiv.textContent.includes('重试') || statusDiv.textContent.includes('失败')) {
@@ -166,7 +307,7 @@ function initStream() {
             statusDiv.style.backgroundColor = 'rgba(40, 167, 69, 0.9)';
         }
     };
-    
+
     streamImg.src = `/api/stream?device=${deviceName}&_t=${Date.now()}`;
 }
 
@@ -208,10 +349,12 @@ async function fetchDeviceResolution() {
 fetchDeviceResolution();
 
 function getVideoBounds() {
-    const rect = streamImg.getBoundingClientRect();
-    const nw = streamImg.naturalWidth;
-    const nh = streamImg.naturalHeight;
-    
+    const elem = getStreamElement();
+    const rect = elem.getBoundingClientRect();
+    const sz = getStreamNaturalSize();
+    const nw = sz.width;
+    const nh = sz.height;
+
     if (nw === 0 || nh === 0) return null;
 
     const containerW = rect.width;
@@ -275,8 +418,65 @@ function getRealCoords(clientX, clientY) {
     
     const realX = Math.round(x * displayToVideoX * videoToDeviceX);
     const realY = Math.round(y * displayToVideoY * videoToDeviceY);
-    
+
     return { x: realX, y: realY };
+}
+
+/**
+ * 截取当前帧的指定区域为 PNG blob
+ * - scrcpy 模式：直接从 stream-canvas 截取（无网络请求，零延迟）
+ * - MJPEG 模式：从 /api/current_frame 获取截图再裁剪
+ */
+function performCrop(realX, realY, cropW, cropH, callback) {
+    const onBlob = (blob) => {
+        if (!blob) { callback(null); return; }
+        croppedBlob = blob;
+        const url = URL.createObjectURL(blob);
+        cropPreview.src = url;
+        cropPreview.style.display = 'block';
+        document.getElementById('region-x1').value = realX;
+        document.getElementById('region-y1').value = realY;
+        document.getElementById('region-x2').value = realX + cropW;
+        document.getElementById('region-y2').value = realY + cropH;
+        callback(blob);
+    };
+
+    if (useScrcpy && streamCanvas.width > 0) {
+        // scrcpy 模式：从当前解码帧的 canvas 直接截取
+        try {
+            const c = document.createElement('canvas');
+            c.width = cropW;
+            c.height = cropH;
+            const ctx = c.getContext('2d');
+            ctx.drawImage(streamCanvas, realX, realY, cropW, cropH, 0, 0, cropW, cropH);
+            c.toBlob(onBlob, 'image/png');
+        } catch (err) {
+            console.error('Canvas crop error:', err);
+            callback(null);
+        }
+    } else {
+        // MJPEG 模式：从 /api/current_frame 获取当前帧
+        const frameImg = new Image();
+        frameImg.crossOrigin = 'Anonymous';
+        frameImg.onload = () => {
+            try {
+                const c = document.createElement('canvas');
+                c.width = cropW;
+                c.height = cropH;
+                const ctx = c.getContext('2d');
+                ctx.drawImage(frameImg, realX, realY, cropW, cropH, 0, 0, cropW, cropH);
+                c.toBlob(onBlob, 'image/png');
+            } catch (err) {
+                console.error('Canvas error:', err);
+                callback(null);
+            }
+        };
+        frameImg.onerror = () => {
+            console.error('current_frame 加载失败');
+            callback(null);
+        };
+        frameImg.src = `/api/current_frame?device_name=${encodeURIComponent(deviceName)}&_t=${Date.now()}`;
+    }
 }
 
 // =================== adb操作 ===================
@@ -362,33 +562,7 @@ streamContainer.addEventListener('mouseup', async (e) => {
 
         if (cropW < 5 || cropH < 5) return;
 
-        const frameImg = new Image();
-        frameImg.crossOrigin = "Anonymous";
-        frameImg.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = cropW;
-            canvas.height = cropH;
-            const ctx = canvas.getContext('2d');
-            
-            try {
-                ctx.drawImage(frameImg, realX, realY, cropW, cropH, 0, 0, cropW, cropH);
-                canvas.toBlob((blob) => {
-                    if (!blob) return;
-                    croppedBlob = blob;
-                    const url = URL.createObjectURL(blob);
-                    cropPreview.src = url;
-                    cropPreview.style.display = 'block';
-                    
-                    document.getElementById('region-x1').value = realX;
-                    document.getElementById('region-y1').value = realY;
-                    document.getElementById('region-x2').value = realX + cropW;
-                    document.getElementById('region-y2').value = realY + cropH;
-                }, 'image/png');
-            } catch (err) {
-                console.error("Canvas error:", err);
-            }
-        };
-        frameImg.src = `/api/current_frame?device_name=${encodeURIComponent(deviceName)}&_t=${Date.now()}`;
+        performCrop(realX, realY, cropW, cropH, () => {});
 
     } else {
         const endCoords = getRealCoords(e.clientX, e.clientY);
@@ -468,33 +642,7 @@ streamContainer.addEventListener('touchend', async (e) => {
 
         if (cropW < 5 || cropH < 5) return;
 
-        const frameImg = new Image();
-        frameImg.crossOrigin = "Anonymous";
-        frameImg.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = cropW;
-            canvas.height = cropH;
-            const ctx = canvas.getContext('2d');
-            
-            try {
-                ctx.drawImage(frameImg, realX, realY, cropW, cropH, 0, 0, cropW, cropH);
-                canvas.toBlob((blob) => {
-                    if (!blob) return;
-                    croppedBlob = blob;
-                    const url = URL.createObjectURL(blob);
-                    cropPreview.src = url;
-                    cropPreview.style.display = 'block';
-                    
-                    document.getElementById('region-x1').value = realX;
-                    document.getElementById('region-y1').value = realY;
-                    document.getElementById('region-x2').value = realX + cropW;
-                    document.getElementById('region-y2').value = realY + cropH;
-                }, 'image/png');
-            } catch (err) {
-                console.error("Canvas error:", err);
-            }
-        };
-        frameImg.src = `/api/current_frame?device_name=${encodeURIComponent(deviceName)}&_t=${Date.now()}`;
+        performCrop(realX, realY, cropW, cropH, () => {});
 
     } else {
         const endCoords = getRealCoords(touch.clientX, touch.clientY);
@@ -548,11 +696,11 @@ saveBtn.addEventListener('click', async () => {
     formData.append('file_name', fileName);
     formData.append('image', croppedBlob, fileName);
     
-    // 获取设备屏幕尺寸（从视频流图片获取实际尺寸）
-    const streamImg = document.getElementById('stream-img');
-    if (streamImg && streamImg.naturalWidth && streamImg.naturalHeight) {
-        formData.append('screen_width', streamImg.naturalWidth);
-        formData.append('screen_height', streamImg.naturalHeight);
+    // 获取设备屏幕尺寸（从当前视频流元素获取实际尺寸）
+    const sz = getStreamNaturalSize();
+    if (sz.width && sz.height) {
+        formData.append('screen_width', sz.width);
+        formData.append('screen_height', sz.height);
     }
 
     try {

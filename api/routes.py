@@ -1,9 +1,10 @@
 # api/routes.py
-from fastapi import APIRouter, Request, Form, File, UploadFile
+from fastapi import APIRouter, Request, Form, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse, JSONResponse, Response
 import asyncio
 import time
 import os
+import queue as _queue_mod
 from pathlib import Path
 
 router = APIRouter()
@@ -578,3 +579,81 @@ def _steps_to_python(steps: list, indent: int = 4) -> str:
             lines.append(f"{pad}return")
 
     return "\n".join(lines)
+
+
+# ===============================================================================================================================
+# scrcpy 视频流（H.264 WebSocket）
+# ===============================================================================================================================
+
+@router.get("/api/scrcpy_status")
+def scrcpy_status(device_name: str):
+    """获取 scrcpy 流状态"""
+    return JSONResponse(content=adb_stream.scrcpy_manager.get_status(device_name))
+
+@router.websocket("/ws/scrcpy_stream")
+async def scrcpy_stream_ws(websocket: WebSocket):
+    """
+    scrcpy H.264 视频流 WebSocket 端点
+    前端连接后接收：
+    1. JSON 元数据（device_info: name, width, height）
+    2. 二进制 H.264 Annex B 数据块
+    """
+    await websocket.accept()
+
+    device = websocket.query_params.get("device")
+    if not device:
+        await websocket.close(code=1008, reason="缺少 device 参数")
+        return
+
+    try:
+        # 启动 scrcpy 流
+        stream = adb_stream.scrcpy_manager.start(device)
+
+        # 等待流就绪
+        for _ in range(50):
+            if stream.running:
+                break
+            await asyncio.sleep(0.1)
+        else:
+            await websocket.send_json({"type": "error", "message": "scrcpy 启动超时"})
+            await websocket.close()
+            return
+
+        # 发送元数据
+        await websocket.send_json({
+            "type": "meta",
+            "device_info": stream.device_info,
+        })
+
+        # 注册客户端
+        q = stream.add_client()
+
+        try:
+            while True:
+                try:
+                    data = await asyncio.to_thread(q.get, True, 0.5)
+                    if data:
+                        await websocket.send_bytes(data)
+                except _queue_mod.Empty:
+                    # 检查流是否还在运行
+                    if not stream.running:
+                        await websocket.send_json({"type": "error", "message": "scrcpy 流已断开"})
+                        break
+                    # 检查连接是否还在
+                    try:
+                        await asyncio.wait_for(websocket.receive_text(), timeout=0.01)
+                    except asyncio.TimeoutError:
+                        pass  # 正常，没有客户端消息
+                except WebSocketDisconnect:
+                    break
+        finally:
+            stream.remove_client(q)
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)[:100]})
+            await websocket.close()
+        except Exception:
+            pass

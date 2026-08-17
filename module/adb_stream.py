@@ -211,3 +211,287 @@ class StreamManager:
         self.runnings[device_name] = False
 
 stream_manager = StreamManager()
+
+
+# =============================================================================================
+#                                       scrcpy 视频流
+# =============================================================================================
+import os
+import struct
+import socket
+import queue as _queue
+import hashlib
+
+
+class ScrcpyStream:
+    """单个设备的 scrcpy H.264 视频流"""
+
+    def __init__(self, device_name: str, jar_path: str):
+        self.device_name = device_name
+        self.jar_path = jar_path
+        self.running = False
+        self.server_proc = None
+        self.video_socket: socket.socket | None = None
+        self.control_socket: socket.socket | None = None  # v1.20 协议需要二次连接
+        self.forward_port = 0
+        self.device_info = {}  # name, width, height
+        self._clients: list[_queue.Queue] = []
+        self._lock = threading.Lock()
+        self._reader_thread = None
+
+    def _get_forward_port(self) -> int:
+        """根据设备名生成一个稳定的端口号"""
+        h = hashlib.md5(self.device_name.encode()).hexdigest()
+        return 20000 + int(h[:4], 16) % 30000
+
+    def start(self):
+        if self.running:
+            return True
+        try:
+            port = self._get_forward_port()
+            self.forward_port = port
+
+            # 0. 清理设备上残留的 scrcpy server 进程
+            #    否则旧 server 仍占用 localabstract:scrcpy, 新 server 绑定失败立即退出,
+            #    导致 dummy byte 返回 EOF (b'').
+            try:
+                subprocess.run(
+                    ['adb', '-s', self.device_name, 'shell', 'pkill', '-f', 'scrcpy-server.jar'],
+                    capture_output=True, timeout=3
+                )
+            except Exception:
+                pass
+
+            # 1. push jar
+            subprocess.run(
+                ['adb', '-s', self.device_name, 'push', self.jar_path, '/data/local/tmp/scrcpy-server.jar'],
+                capture_output=True, timeout=15
+            )
+
+            # 2. adb forward
+            subprocess.run(
+                ['adb', '-s', self.device_name, 'forward', f'tcp:{port}', 'localabstract:scrcpy'],
+                capture_output=True, timeout=5
+            )
+
+            # 3. start server (v1.20 protocol, control=false)
+            #    注意: stdout/stderr 必须用 DEVNULL, 不能用 PIPE!
+            #    scrcpy server 会输出大量日志, pipe buffer (64KB) 满后
+            #    server 会阻塞, 导致 socket 通信卡死, dummy byte 返回 EOF.
+            cmd = [
+                'adb', '-s', self.device_name, 'shell',
+                'CLASSPATH=/data/local/tmp/scrcpy-server.jar',
+                'app_process', '/', 'com.genymobile.scrcpy.Server',
+                '1.20',           # version
+                'info',           # log level
+                '0',              # max width (0=unlimited)
+                '8000000',        # bitrate
+                '0',              # max fps (0=unlimited)
+                '-1',             # lock screen orientation (unlocked)
+                'true',           # tunnel forward
+                '-',              # crop
+                'false',          # send frame rate
+                'false',          # control enabled (DISABLED)
+                '0',              # display id
+                'false',          # show touches
+                'true',           # stay awake
+                '-',              # codec options
+                '-',              # encoder name
+                'false',          # power off screen after close
+            ]
+            self.server_proc = subprocess.Popen(
+                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+
+            # 给 server 充分启动时间 (redroid 上 ~500ms, 真机更快)
+            # 如果不 sleep, retry 循环可能连接太快, server 还在初始化,
+            # 导致 dummy byte 返回 EOF.
+            time.sleep(0.8)
+
+            # 4. connect to video socket (retry until server is ready)
+            #    v1.20 协议: tunnel_forward 模式下, server 监听 localabstract:scrcpy,
+            #    客户端必须连接两次 (video + control), 即使 control_enabled=false.
+            #    只连一次会导致 server 卡在等待第二个连接, 最终触发 CleanUp 退出.
+            for _ in range(30):
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.settimeout(2)
+                    s.connect(('127.0.0.1', port))
+                    self.video_socket = s
+                    break
+                except (ConnectionRefusedError, socket.timeout):
+                    time.sleep(0.1)
+            else:
+                raise ConnectionError("无法连接 scrcpy server (video socket)")
+
+            # 4.1 连接 control socket (v1.20 协议要求, 即使 control=false)
+            time.sleep(0.15)  # 给 server 时间接受第一个连接
+            try:
+                cs = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                cs.settimeout(2)
+                cs.connect(('127.0.0.1', port))
+                self.control_socket = cs
+            except (ConnectionRefusedError, socket.timeout):
+                # 某些设备/版本可能不需要, 忽略错误
+                pass
+
+            # 5. read protocol header
+            # dummy byte
+            dummy = self.video_socket.recv(1)
+            if not dummy or dummy != b'\x00':
+                raise ConnectionError(f"dummy byte 异常: {dummy!r}")
+
+            # device name (64 bytes)
+            name_bytes = self._recv_exact(64)
+            self.device_info['name'] = name_bytes.decode('utf-8').rstrip('\x00')
+
+            # resolution (4 bytes: uint16 width, uint16 height, big-endian)
+            res_bytes = self._recv_exact(4)
+            w, h = struct.unpack('>HH', res_bytes)
+            self.device_info['width'] = w
+            self.device_info['height'] = h
+
+            self.video_socket.setblocking(False)
+            self.running = True
+
+            # 6. start reader thread
+            self._reader_thread = threading.Thread(target=self._read_loop, daemon=True)
+            self._reader_thread.start()
+            return True
+
+        except Exception as e:
+            self.running = False
+            self._cleanup()
+            raise
+
+    def _recv_exact(self, n: int) -> bytes:
+        """从 socket 精确读取 n 个字节"""
+        buf = b''
+        while len(buf) < n:
+            if not self.video_socket:
+                raise ConnectionError("socket 已关闭")
+            chunk = self.video_socket.recv(n - len(buf))
+            if not chunk:
+                raise ConnectionError("socket 已断开")
+            buf += chunk
+        return buf
+
+    def _read_loop(self):
+        """后台线程：读取 H.264 数据并广播给所有 WebSocket 客户端"""
+        while self.running and self.video_socket:
+            try:
+                data = self.video_socket.recv(0x10000)  # 64KB chunks
+                if not data:
+                    break
+                with self._lock:
+                    dead = []
+                    for q in self._clients:
+                        try:
+                            q.put_nowait(data)
+                        except _queue.Full:
+                            dead.append(q)  # 客户端太慢，丢弃
+                    for q in dead:
+                        self._clients.remove(q)
+            except BlockingIOError:
+                time.sleep(0.005)
+            except OSError:
+                break
+
+        self.running = False
+        self._cleanup()
+
+    def add_client(self) -> _queue.Queue:
+        """添加一个 WebSocket 客户端，返回一个数据队列"""
+        q: _queue.Queue = _queue.Queue(maxsize=300)
+        with self._lock:
+            self._clients.append(q)
+        return q
+
+    def remove_client(self, q: _queue.Queue):
+        """移除一个客户端，如果没有客户端了就停止流"""
+        with self._lock:
+            if q in self._clients:
+                self._clients.remove(q)
+            if not self._clients:
+                self.stop()
+
+    def stop(self):
+        self.running = False
+        self._cleanup()
+
+    def _cleanup(self):
+        if self.video_socket:
+            try:
+                self.video_socket.close()
+            except Exception:
+                pass
+            self.video_socket = None
+        if self.control_socket:
+            try:
+                self.control_socket.close()
+            except Exception:
+                pass
+            self.control_socket = None
+        if self.server_proc:
+            try:
+                self.server_proc.terminate()
+                self.server_proc.wait(timeout=3)
+            except Exception:
+                try:
+                    self.server_proc.kill()
+                except Exception:
+                    pass
+            self.server_proc = None
+        try:
+            subprocess.run(
+                ['adb', '-s', self.device_name, 'forward', '--remove', f'tcp:{self.forward_port}'],
+                capture_output=True, timeout=3
+            )
+        except Exception:
+            pass
+        # 同时清理设备上残留的 scrcpy server 进程
+        try:
+            subprocess.run(
+                ['adb', '-s', self.device_name, 'shell', 'pkill', '-f', 'scrcpy-server.jar'],
+                capture_output=True, timeout=3
+            )
+        except Exception:
+            pass
+
+    def get_status(self):
+        return {
+            "running": self.running,
+            "device_info": self.device_info,
+            "client_count": len(self._clients),
+        }
+
+
+class ScrcpyStreamManager:
+    """管理多设备的 scrcpy 视频流"""
+
+    def __init__(self):
+        self.jar_path = os.path.join(os.path.dirname(__file__), 'scrcpy-server.jar')
+        self.streams: dict[str, ScrcpyStream] = {}
+
+    def _ensure(self, device_name: str) -> ScrcpyStream:
+        if device_name not in self.streams:
+            self.streams[device_name] = ScrcpyStream(device_name, self.jar_path)
+        return self.streams[device_name]
+
+    def start(self, device_name: str):
+        s = self._ensure(device_name)
+        if not s.running:
+            s.start()
+        return s
+
+    def stop(self, device_name: str):
+        if device_name in self.streams:
+            self.streams[device_name].stop()
+
+    def get_status(self, device_name: str):
+        if device_name not in self.streams:
+            return {"running": False, "device_info": {}, "client_count": 0}
+        return self.streams[device_name].get_status()
+
+
+scrcpy_manager = ScrcpyStreamManager()

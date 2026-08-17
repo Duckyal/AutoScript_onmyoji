@@ -30,13 +30,15 @@
       <!-- 左侧：视频流 -->
       <div class="stream-section">
         <div class="stream-container" id="stream-container">
-          <img id="stream-img" src="/api/stream?device={{device}}" alt="Video Stream" style="width: 100%; height: 100%; object-fit: contain; pointer-events:none;">
+          <img id="stream-img" alt="Video Stream" style="width: 100%; height: 100%; object-fit: contain; pointer-events:none;">
+          <canvas id="stream-canvas" style="width: 100%; height: 100%; object-fit: contain; pointer-events:none; display: none;"></canvas>
+          <div id="stream-mode-badge" style="position: absolute; top: 8px; right: 8px; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: bold; color: #fff; background-color: #6b7280; z-index: 20; pointer-events: none; user-select: none;">流模式: 加载中</div>
           <div id="selection-overlay" style="
-              position: absolute; 
-              border: 2px dashed #22c55e; 
-              background-color: rgba(34, 197, 94, 0.2); 
-              display: none; 
-              pointer-events: none; 
+              position: absolute;
+              border: 2px dashed #22c55e;
+              background-color: rgba(34, 197, 94, 0.2);
+              display: none;
+              pointer-events: none;
               z-index: 10;">
           </div>
         </div>
@@ -53,20 +55,20 @@
           <label for="screenshot-mode" style="cursor:pointer;">拉框截图模式(中键切换)</label>
         </div>
 
-        <div class="input-group">
+        <div class="input-group" id="mjpeg-interval-group">
           <div style="display: flex; align-items: center; gap: 8px;">
             <label for="stream-interval">截图间隔 (毫秒)：</label>
             <span id="stream-interval-value" style="font-size: 12px; color: #6b7280;">50ms (约20fps)</span>
           </div>
           <div style="display: flex; gap: 8px;">
-            <input type="number" id="stream-interval" min="1" max="60" step="1" value="30" 
+            <input type="number" id="stream-interval" min="1" max="60" step="1" value="30"
                    style="flex: 1; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px;">
             <button id="btn-set-interval" class="btn" style="padding: 8px 16px; background-color: #3b82f6; color: white; border: none; border-radius: 4px; font-size: 13px; cursor: pointer;">设置</button>
           </div>
         </div>
 
         <div class="input-group">
-          <label for="folder-path">保存目录路径（默认项目下tasks/tmp目录）：</label>
+          <label for="folder-path">保存路径 (默认tasks/tmp目录)：</label>
           <input type="text" id="folder-path" value="./tasks/tmp">
         </div>
 
@@ -186,6 +188,7 @@
     </script>
   {% endif %}
 
+  <script src="/static/js/dev/scrcpy_webcodecs.js?v={{ time_now }}"></script>
   <script src="/static/js/dev/scrcpy.js?v={{ time_now }}"></script>
 
 </body>
