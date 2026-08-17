@@ -67,3 +67,230 @@
     font-size: var(--font-size-sm);
   }
 }
+
+/* ==================== 自定义任务步骤编辑器 ==================== */
+.task-panel--custom {
+  max-width: 720px;
+}
+
+.custom-steps {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: #f8fafc;
+  overflow: hidden;
+}
+.custom-steps__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background-color: #eef2ff;
+  border-bottom: 1px solid var(--color-border);
+}
+.custom-steps__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #3730a3;
+}
+.custom-steps__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn--sm {
+  padding: 4px 10px !important;
+  font-size: 12px !important;
+}
+
+.custom-steps__list {
+  padding: 10px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 80px;
+}
+.custom-steps__empty {
+  text-align: center;
+  padding: 28px 16px;
+  color: #94a3b8;
+  font-size: 13px;
+  border: 1px dashed #cbd5e1;
+  border-radius: var(--radius-sm);
+  background-color: #ffffff;
+}
+.custom-steps__empty--small {
+  padding: 14px 12px;
+  font-size: 12px;
+}
+
+.custom-step {
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+.custom-step--container {
+  border-color: #c7d2fe;
+  background-color: #f5f3ff;
+}
+.custom-step__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px dashed #e2e8f0;
+}
+.custom-step__head-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.custom-step__idx {
+  display: inline-block;
+  min-width: 28px;
+  text-align: center;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffffff;
+  background-color: #6366f1;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.custom-step--container .custom-step__idx {
+  background-color: #8b5cf6;
+}
+.custom-step__type {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background-color: #ffffff;
+}
+.custom-step__actions {
+  display: flex;
+  gap: 4px;
+}
+.custom-step__actions button {
+  width: 26px;
+  height: 26px;
+  font-size: 12px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e2e8f0;
+  background-color: #ffffff;
+  color: #64748b;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.custom-step__actions button:hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+.custom-step__body {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.custom-param {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.custom-param__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #475569;
+}
+.custom-param__input,
+.custom-param__select,
+.custom-param__textarea {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background-color: #ffffff;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+.custom-param__textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+.custom-param__checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #0f172a;
+  cursor: pointer;
+}
+.custom-param__checkbox input {
+  width: 14px;
+  height: 14px;
+}
+
+/* 图片多选下拉 */
+.custom-param__image-multi {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.custom-param__image-multi select[multiple] {
+  min-height: 80px;
+  max-height: 140px;
+}
+.custom-param__image-multi select[multiple] option {
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.custom-step__children {
+  padding: 10px 10px 10px 6px;
+  border-top: 1px dashed #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background-color: rgba(255,255,255,0.6);
+}
+.custom-step__child-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px dashed #c7d2fe;
+  border-radius: 4px;
+  background-color: #ffffff;
+}
+.custom-step__child-add select {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+}
+
+@media (max-width: 480px) {
+  .custom-step__header {
+    flex-wrap: wrap;
+  }
+  .custom-step__actions {
+    order: 3;
+    width: 100%;
+    justify-content: flex-end;
+    padding-top: 6px;
+  }
+}

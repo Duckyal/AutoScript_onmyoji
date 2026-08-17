@@ -12,3 +12,4 @@ env/
 *.egg
 .DS_Store
 .vscode/
+email-api

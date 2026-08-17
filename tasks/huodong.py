@@ -86,7 +86,7 @@ class Task_huodong:
                 self.op.sleep(2)
             elif "胜利_1920x1080.png" in result:
                 self.op.点击(*result["胜利_1920x1080.png"])
-                if step != 'start':
+                if step == 'start':
                     num += 1
                     self.op.log(f'已完成{num}次')
                     step = 'stop'

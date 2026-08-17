@@ -1,5 +1,5 @@
 /**
- * 顶部标题栏样式
+ * 顶部标题栏样式（浅色背景 + 绿色强调色，与 dev.html 强调色一致）
  */
 
 .header {
@@ -43,17 +43,29 @@
 .header__title-main {
   color: var(--color-text-primary);
   white-space: nowrap;
+  text-decoration: none;
 }
 
+.header__title-main a {
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+/* 标题中的分隔符（与 dev.html 统一用绿色强调） */
+.header__separator {
+  color: var(--color-success);
+  font-weight: bold;
+}
+/* 
 .header__title-process {
-  color: var(--color-primary);
+  color: var(--color-success);
   font-weight: var(--font-weight-medium);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
+} */
 
-/* 标题栏按钮 */
+/* 标题栏执行按钮（绿色主按钮） */
 .header__start-btn {
   display: flex;
   align-items: center;
@@ -83,6 +95,24 @@
   flex-shrink: 0;
 }
 
+/* 切换按钮（与 dev.html 的 toggle-sidebar-btn 颜色一致，圆角与执行按钮统一） */
+.toggle-sidebar-btn {
+  background: #374151;
+  color: #fff;
+  border: none;
+  padding: var(--spacing-2) var(--spacing-4);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+  transition: background-color var(--transition-fast);
+  white-space: nowrap;
+}
+.toggle-sidebar-btn:hover {
+  background: #4b5563;
+}
+
 
 /* ==================== 响应式 - 手机 ==================== */
 @media (max-width: 480px) {
@@ -90,21 +120,26 @@
     padding: 0 var(--spacing-3);
     height: 48px;
   }
-  
+
   .header__title {
     font-size: var(--font-size-base);
   }
-  
+
   .header__title-main {
     font-size: var(--font-size-base);
   }
-  
+
   /* 手机端隐藏首页链接和首个分隔符，保留设备信息和任务名 */
   .header__title-main:first-child,
-  .header__title-main:nth-child(2) {
+  .header__separator:first-of-type {
     display: none;
   }
-  
+
+  /* 手机端隐藏"转到开发"按钮，腾出空间给任务名 */
+  .toggle-sidebar-btn {
+    display: none;
+  }
+
   .header__title-process {
     font-size: var(--font-size-base);
   }
@@ -115,7 +150,7 @@
   .header {
     padding: 0 var(--spacing-4);
   }
-  
+
   .header__title {
     font-size: var(--font-size-base);
   }

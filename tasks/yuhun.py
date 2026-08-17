@@ -20,7 +20,7 @@ class Task_yuhun:
         count = int(self.config.get("count"))
         num = 0
         if team == "leader":
-            self.op.图片预加载("tasks/御魂图片/八岐大蛇/胜利_960x540.png", "tasks/御魂图片/八岐大蛇/结束_960x540.png", "tasks/御魂图片/八岐大蛇/挑战_960x540.png",
+            self.op.图片预加载("tasks/御魂图片/八岐大蛇/失败_1920x1080.png", "tasks/御魂图片/八岐大蛇/结束_1920x1080.png", "tasks/御魂图片/八岐大蛇/挑战_1920x1080.png",
                           "tasks/御魂图片/八岐大蛇/拒绝悬赏_1920x1080.png")
             while True:
                 self.op.sleep(1)
@@ -29,22 +29,26 @@ class Task_yuhun:
                     self.op.sleep(2)
                 elif "拒绝悬赏_1920x1080.png" in result:
                     self.op.点击(*result["拒绝悬赏_1920x1080.png"])
-                elif "挑战_960x540.png" in result:
-                    self.op.点击(*result["挑战_960x540.png"])
-                elif "胜利_960x540.png" in result:
+                elif "挑战_1920x1080.png" in result:
+                    self.op.点击(*result["挑战_1920x1080.png"])
+                    if self.state == "Y":
+                        self.state = "N"
+                elif "失败_1920x1080.png" in result:
                     self.op.点击(*self.结束点击)
-                    self.state = "N"
-                elif "结束_960x540.png" in result:
+                    from module.decorators import TaskStoppedException
+                    raise TaskStoppedException("八岐大蛇任务失败：请检查阵容和御魂是否正确")
+                elif "结束_1920x1080.png" in result:
                     self.op.点击(*self.结束点击)
                     if self.state == "N":
                         self.state = "Y"
                         num += 1
-                    self.op.log(f"已挑战{num}次")
+                        self.op.log(f"已挑战{num}次")
                     if num >= count and count != 0:
                         self.op.log("完成御魂任务")
                         break
         else:
-            self.op.图片预加载("tasks/御魂图片/八岐大蛇/胜利_960x540.png", "tasks/御魂图片/八岐大蛇/结束_960x540.png", "tasks/御魂图片/八岐大蛇/拒绝悬赏_1920x1080.png")
+            self.op.图片预加载("tasks/御魂图片/八岐大蛇/失败_1920x1080.png", "tasks/御魂图片/八岐大蛇/结束_1920x1080.png", "tasks/御魂图片/八岐大蛇/拒绝悬赏_1920x1080.png", 
+                          "tasks/御魂图片/八岐大蛇/组队页_1920x1080.png")
             while True:
                 self.op.sleep(1)
                 result = self.op.找图()
@@ -52,15 +56,19 @@ class Task_yuhun:
                     self.op.sleep(2)
                 elif "拒绝悬赏_1920x1080.png" in result:
                     self.op.点击(*result["拒绝悬赏_1920x1080.png"])
-                elif "胜利_960x540.png" in result:
+                elif "组队页_1920x1080.png" in result:
+                    if self.state == "Y":
+                        self.state = "N"
+                elif "失败_1920x1080.png" in result:
                     self.op.点击(*self.结束点击)
-                    self.state = "N"
-                elif "结束_960x540.png" in result:
+                    from module.decorators import TaskStoppedException
+                    raise TaskStoppedException("八岐大蛇任务失败：请检查阵容和御魂是否正确")
+                elif "结束_1920x1080.png" in result:
                     self.op.点击(*self.结束点击)
                     if self.state == "N":
                         self.state = "Y"
                         num += 1
-                    self.op.log(f"已挑战{num}次")
+                        self.op.log(f"已挑战{num}次")
                     if num >= count and count != 0:
                         self.op.log("完成御魂任务")
                         break

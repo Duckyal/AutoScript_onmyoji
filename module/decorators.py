@@ -255,3 +255,85 @@ class bezierTrajectory:
             for i in xTrackArray:
                 s.append([i, fun(i)])
         return {"trackArray": np.array(s), "P": w}
+
+# =============================================================================================
+#                                          邮件提醒 API
+# =============================================================================================
+import json
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.header import Header
+from pathlib import Path
+
+EMAIL_CONFIG_FILE = Path(__file__).resolve().parent.parent / "email-api"
+
+_DEFAULT_EMAIL_CONFIG = {
+    "enabled": False,
+    "smtp_server": "smtp.qq.com",
+    "smtp_port": 465,
+    "use_ssl": True,
+    "sender_email": "",
+    "auth_code": "",
+    "receiver_email": ""
+}
+
+def load_email_config() -> dict:
+    """读取 email-api 配置文件，不存在则返回默认配置"""
+    try:
+        if EMAIL_CONFIG_FILE.exists():
+            with open(EMAIL_CONFIG_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            cfg = _DEFAULT_EMAIL_CONFIG.copy()
+            cfg.update(data)
+            return cfg
+        return _DEFAULT_EMAIL_CONFIG.copy()
+    except Exception:
+        return _DEFAULT_EMAIL_CONFIG.copy()
+
+def save_email_config(config: dict) -> bool:
+    """保存邮件配置到 email-api 文件"""
+    try:
+        cfg = _DEFAULT_EMAIL_CONFIG.copy()
+        cfg.update({k: v for k, v in config.items() if k in _DEFAULT_EMAIL_CONFIG})
+        with open(EMAIL_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception:
+        return False
+
+def send_email(subject: str, content: str, content_type: str = "plain") -> dict:
+    """
+    发送邮件（基于 email-api 文件中的配置）
+    返回 {"success": bool, "message": str}
+    """
+    cfg = load_email_config()
+    if not cfg.get("enabled"):
+        return {"success": False, "message": "任务结束提醒未开启"}
+    if not (cfg.get("smtp_server") and cfg.get("sender_email") and cfg.get("auth_code") and cfg.get("receiver_email")):
+        return {"success": False, "message": "邮件配置不完整，请先设置 SMTP 服务器、发件人、授权码和收件人"}
+
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = str(Header(cfg["sender_email"]))
+        msg["To"] = str(Header(cfg["receiver_email"]))
+        msg["Subject"] = str(Header(subject, "utf-8"))
+        msg.attach(MIMEText(content, content_type, "utf-8"))
+
+        smtp_server = cfg["smtp_server"]
+        smtp_port = int(cfg.get("smtp_port", 465))
+        use_ssl = bool(cfg.get("use_ssl", True))
+
+        if use_ssl:
+            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)
+        else:
+            server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
+            server.starttls()
+        try:
+            server.login(cfg["sender_email"], cfg["auth_code"])
+            server.sendmail(cfg["sender_email"], cfg["receiver_email"].split(","), msg.as_string())
+        finally:
+            server.quit()
+        return {"success": True, "message": "邮件发送成功"}
+    except Exception as e:
+        return {"success": False, "message": f"邮件发送失败: {str(e)}"}

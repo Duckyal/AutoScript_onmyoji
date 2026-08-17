@@ -20,14 +20,15 @@
   <!-- 顶部标题栏 -->
   <header class="header">
     <h1 class="header__title">
-      <a class="header__title-main" href="/">AutoScript</a>
-      <span class="header__title-main"> &gt;&gt; </span>
-      <span class="header__title-main">设备({{device}}) &gt; </span>
-      <span class="header__title-process" id="taskName"></span>
+      <a class="header__title-main" href="/">AutoScript(主页)</a>
+      <span class="header__separator"> &gt;&gt; </span>
+      <span class="header__title-main">设备( {{device}} )</span>
+      <span class="header__separator"> &gt; </span>
+      <span class="header__title-main" id="taskName"></span>
     </h1>
     
     <div style="display: flex; gap: 8px; align-items: center;">
-      <a href="/dev?device={{device}}" class="header__start-btn" >转到开发</a>
+      <a href="/dev?device={{device}}" class="toggle-sidebar-btn" style="text-decoration: none;">转到开发</a>
       <button class="header__start-btn" id="startBtn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
           <polygon points="5,3 19,12 5,21"></polygon>
@@ -336,17 +337,65 @@
             </div>
           </div>
 
+          <!-- 自定义任务配置 -->
+          <div class="task-panel task-panel--custom" id="panel-custom" style="display: none;" data-name="自定义">
+            <h3 class="task-panel__title">自定义任务配置</h3>
+            <div class="task-panel__notice">
+              <svg class="task-panel__notice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <div class="task-panel__notice-content">
+                <div class="task-panel__notice-title">使用说明</div>
+                <p class="task-panel__notice-text">• 依次添加步骤：先【预加载图片】→ 然后在循环里【找图/找字】→ 命中后【执行操作】→ 最后【休眠】</p>
+                <p class="task-panel__notice-text">• 图片路径：放在项目 tasks/tmp/ 或 tasks/xxx图片/ 目录下，如 tasks/tmp/按钮_1920x1080.png</p>
+                <p class="task-panel__notice-text">• 嵌套循环（可选）：先加『循环』步骤，再往循环体里加子步骤，循环条件可用『执行次数 N 次』或『命中图片停止』</p>
+                <p class="task-panel__notice-text">• 复杂逻辑建议还是写脚本，此工具用于简单的识图+操作场景</p>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="custom_task_name">任务名称（用于日志标识，可选）</label>
+              <input class="form-input" type="text" id="custom_task_name" name="custom_task_name" placeholder="例: 自动收菜">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="custom_mode">更多日志（显示每一步识图详情）</label>
+              <select class="form-select" id="custom_mode" name="mode">
+                <option value="less">否</option>
+                <option value="more">是</option>
+              </select>
+            </div>
+
+            <!-- 步骤编辑区 -->
+            <div class="custom-steps" id="customSteps">
+              <div class="custom-steps__header">
+                <span class="custom-steps__title">步骤列表</span>
+                <div class="custom-steps__actions">
+                  <button class="btn btn--ghost btn--sm" id="customViewCode" type="button">查看源码</button>
+                  <button class="btn btn--ghost btn--sm" id="customStepAdd" type="button">+ 新增步骤</button>
+                </div>
+              </div>
+              <div class="custom-steps__list" id="customStepsList"><!-- 动态渲染 --></div>
+            </div>
+
+            <!-- 隐式提交字段，收集 JSON 步骤 -->
+            <input type="hidden" id="custom_steps_json" name="steps">
+          </div>
+
         </main>
       </div>
 
       <!-- 下方 1/3：终端界面 -->
       <div class="terminal">
         <div class="terminal__header">
-          <span class="terminal__title">输出日志</span>
+          <span class="terminal__title">日志</span>
           <div class="terminal__buttons">
             <select class="terminal__filter-select" id="deviceFilter" title="筛选设备">
               <option value="all">全部设备</option>
             </select>
+            <button class="terminal__auto-scroll-btn" id="emailToggleBtn" title="任务结束邮件提醒">提醒</button>
             <button class="terminal__auto-scroll-btn" id="autoScrollBtn" title="滚动切换">滚动</button>
             <button class="terminal__clear-btn" id="clearTerminalBtn" title="清空日志">清空</button>
           </div>
@@ -380,8 +429,56 @@
         });
     </script>
   {% endif %}
+
+  <!-- 邮件提醒配置弹窗 -->
+  <div class="email-modal" id="emailModal" style="display:none;">
+    <div class="email-modal__mask" data-close></div>
+    <div class="email-modal__box">
+      <div class="email-modal__header">
+        <h3 class="email-modal__title">任务结束提醒设置</h3>
+        <button class="email-modal__close" data-close title="关闭">✕</button>
+      </div>
+      <div class="email-modal__body">
+        <div class="form-group form-group--modal">
+          <label class="form-label">SMTP 服务器</label>
+          <input class="form-input" id="emSmtpServer" type="text" placeholder="如 smtp.qq.com / smtp.163.com" value="smtp.qq.com">
+        </div>
+        <div class="form-group form-group--modal">
+          <label class="form-label">SMTP 端口</label>
+          <input class="form-input" id="emSmtpPort" type="number" value="465">
+        </div>
+        <div class="form-group form-group--modal">
+          <label class="form-label">启用 SSL/TLS</label>
+          <select class="form-select" id="emUseSsl">
+            <option value="true" selected>是（推荐，QQ/163 等常用）</option>
+            <option value="false">否（用 STARTTLS，端口常为 25/587）</option>
+          </select>
+        </div>
+        <div class="form-group form-group--modal">
+          <label class="form-label">发件人邮箱</label>
+          <input class="form-input" id="emSender" type="email" placeholder="you@qq.com">
+        </div>
+        <div class="form-group form-group--modal">
+          <label class="form-label" id="emAuthLabel">邮箱授权码 / 密钥</label>
+          <input class="form-input" id="emAuthCode" type="password" placeholder="输入授权码（不是登录密码）">
+          <small class="email-modal__tip">注意：一般是邮箱设置中单独生成的"授权码"，不是登录密码。</small>
+        </div>
+        <div class="form-group form-group--modal">
+          <label class="form-label">收件人邮箱（多个用逗号分隔）</label>
+          <input class="form-input" id="emReceiver" type="text" placeholder="me@qq.com, other@163.com">
+        </div>
+      </div>
+      <div class="email-modal__footer">
+        <button class="btn btn--ghost" id="emTestBtn">发送测试</button>
+        <div style="flex:1;"></div>
+        <button class="btn btn--ghost" data-close>取消</button>
+        <button class="btn btn--primary" id="emSaveBtn">保存并启用</button>
+      </div>
+    </div>
+  </div>
    
   <!-- JavaScript 文件 -->
+  <script src="/static/js/home/custom.js?v={{ time_now }}"></script>
   <script src="/static/js/home/task.js?v={{ time_now }}"></script>
   <script src="/static/js/home/terminal.js?v={{ time_now }}"></script>
   <script src="/static/js/home/app.js?v={{ time_now }}"></script>
