@@ -5,7 +5,7 @@
 ## 功能特性
 
 - **Web 界面管理**：基于 FastAPI 的现代化 Web 界面，支持实时日志查看和任务管理
-- **开发控制台**：集成 uiautomator2 投屏功能，支持实时查看设备屏幕、远程操作、拉框截图、找图找字、可调帧率
+- **开发控制台**：集成 uiautomator2 投屏功能，支持实时查看设备屏幕、远程操作、拉框截图、找图找字、可调帧率；可自动切换 scrcpy H.264 硬件解码流，CPU 占用更低、延迟更小
 - **内置任务**：支持御魂、御灵、斗技、突破、英杰、活动、K28 等游戏任务自动化
 - **OCR 识别**：集成 RapidOCR 进行图像文字识别，支持正则匹配和局部区域识别
 - **图像处理**：使用 OpenCV 进行图像分析和模板匹配，支持角优先度选择
@@ -130,6 +130,14 @@ python main.py
 
 服务将在 `http://localhost:8000` 启动（可搭配内网穿透工具异网操控本地脚本运行）。
 
+> **scrcpy H.264 硬解投屏前提（重要）**：
+> 浏览器硬件解码 H.264 需要**安全上下文**。满足以下任一条件即可自动启用 scrcpy 硬解：
+> - 本机访问：`http://localhost:8000` 或 `http://127.0.0.1:8000`
+> - 跨机访问：使用 HTTPS（如 caddy/nginx 反代）
+> - 通过 `http://0.0.0.0:8000` 访问时，页面会自动重定向到 `localhost:8000`（启用硬解）
+>
+> 不满足条件时（如纯 HTTP 局域网 IP 访问）自动回退到 MJPEG 截图流，功能一致但 CPU 占用更高。
+
 ### 连接设备
 
 1. 确保 Android 设备已开启 **USB 调试**
@@ -180,7 +188,7 @@ AutoScript_onmyoji/
 │   └── ui.py               # UI 页面路由
 ├── module/                 # 核心模块
 │   ├── adb.py              # ADB 设备管理（截图、点击、找图、找字）
-│   ├── adb_stream.py       # 视频流管理（截屏方式，支持多设备同时投屏）
+│   ├── adb_stream.py       # 视频流管理（MJPEG 截图流 + scrcpy H.264 硬解流，均支持多设备同时投屏）
 │   ├── decorators.py       # 装饰器工具（停止信号、可中断 sleep、邮件通知）
 │   ├── logmanager.py       # WebSocket 日志管理器（实时推送、历史日志存储）
 │   └── task_manager.py     # 任务管理器（协程管理、状态查询）
@@ -233,9 +241,11 @@ AutoScript_onmyoji/
 | 接口 | 方法 | 说明 |
 |------|------|------|
 | `/api/stream` | GET | 获取视频流（MJPEG 格式，需传 `device` 参数） |
-| `/api/start_stream` | GET | 启动视频流（需传 `device_name` 参数） |
-| `/api/stream_status` | GET | 获取流状态（需传 `device_name` 参数） |
-| `/api/set_stream_interval` | POST | 设置截图间隔（控制帧率，全局生效） |
+| `/api/start_stream` | GET | 启动 MJPEG 截图流（需传 `device_name` 参数） |
+| `/api/stream_status` | GET | 获取 MJPEG 截图流状态（需传 `device_name` 参数） |
+| `/api/set_stream_interval` | POST | 设置 MJPEG 截图间隔（控制帧率，全局生效） |
+| `/ws/scrcpy_stream` | WebSocket | scrcpy H.264 硬解视频流端点（需传 `?device=xxx`；先发送 JSON 元数据，再发送二进制 H.264 Annex B 数据块） |
+| `/api/scrcpy_status` | GET | 获取 scrcpy 硬解流状态（需传 `device_name` 参数） |
 
 ### 输入控制
 
@@ -436,14 +446,17 @@ mode = self.config.get("mode", "less")
 
 ##### 1. 实时投屏
 
-- 左侧显示设备屏幕实时画面（MJPEG 视频流）
-- 支持点击、长按、滑动等远程操作
-- 支持触摸屏手势（滑动和长按）
+开发控制台自动检测浏览器能力并切换投屏模式：
+- **scrcpy H.264 硬解（推荐）**：使用 scrcpy 协议获取 H.264 硬件编码流，通过 WebSocket 传输，浏览器 WebCodecs API 硬件解码渲染，CPU 占用低、延迟小、画质清晰。需要满足**安全上下文**（见上方"scrcpy 硬解投屏前提"）
+- **MJPEG 截图流（回退）**：后端高频截图编码 JPEG 推流，浏览器逐帧解码，兼容性好但 CPU 占用较高。不满足 WebCodecs 条件时自动回退
+- **模式徽标**：视频流右上角有颜色标识 — 绿色=scrcpy 硬解（半透明不遮挡画面）、蓝色=MJPEG 截图、橙色=连接中/等待关键帧、红色=已断开
+- **左上角状态提示**：正常流状态自动隐藏；异常时显示（MJPEG: 未初始化/已连接；scrcpy: 等待关键帧/已连接/已断开）
+- 支持点击、长按、滑动等远程操作；移动端支持触摸手势（滑动和长按）
 
 ##### 2. 模式与保存设置
 
 - **拉框截图模式**：勾选后可在视频流上框选区域，中键切换
-- **截图间隔**：设置视频流帧率（1-60 毫秒，对应约 16-1000 fps）
+- **截图间隔**：仅 MJPEG 模式可用，设置视频流帧率（1-60 毫秒，对应约 16-1000 fps）；scrcpy 模式下该控件自动隐藏（由 scrcpy server 控制码率与帧率）
 - **指定保存文件夹路径**：设置截图保存位置，默认保存到项目下 `tasks/tmp` 目录
 - **保存文件名**：输入文件名（不带后缀，必填），后台自动添加屏幕参数和后缀
 
