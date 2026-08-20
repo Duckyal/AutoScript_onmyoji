@@ -10,6 +10,8 @@ class Task_huodong:
             self.sp()
         elif self.config.get("type") == "type1":
             self.type1()
+        elif self.config.get("type") == "type2":
+            self.type2()
         else:
             self.op.log(f"暂未支持该选项", level="error")
 
@@ -18,7 +20,7 @@ class Task_huodong:
         num = 0
         step = 'start'
         point = None
-        self.op.图片预加载('tasks/活动图片/start_1920x1080.png', 'tasks/活动图片/over_1920x1080.png')
+        self.op.图片预加载('tasks/活动图片/爬塔/start_1920x1080.png', 'tasks/活动图片/爬塔/over_1920x1080.png')
         while True:
             self.op.sleep(0.5)
             result = self.op.找图(0.9)
@@ -50,8 +52,8 @@ class Task_huodong:
         n = int(self.config.get("count", 0))
         num = 0
         step = 'start'
-        self.op.图片预加载("tasks/活动图片/继续挑战_1920x1080.png", "tasks/活动图片/开始挑战_1920x1080.png", "tasks/活动图片/胜利_1920x1080.png", 
-                      "tasks/活动图片/失败_1920x1080.png", "tasks/活动图片/搜寻_1920x1080.png")
+        self.op.图片预加载("tasks/活动图片/爬塔/继续挑战_1920x1080.png", "tasks/活动图片/爬塔/开始挑战_1920x1080.png", "tasks/活动图片/爬塔/胜利_1920x1080.png", 
+                      "tasks/活动图片/爬塔/失败_1920x1080.png", "tasks/活动图片/爬塔/搜寻_1920x1080.png")
         while True:
             self.op.sleep(0.5)
             result = self.op.找图()
@@ -94,3 +96,25 @@ class Task_huodong:
             elif "失败_1920x1080.png" in result:
                 self.op.点击(*result["失败_1920x1080.png"])
                 self.op.sleep(1)
+
+    def type2(self):
+        self.op.图片预加载("tasks/活动图片/大富翁/一锤定音_1920x1080.png", "tasks/活动图片/大富翁/借运化吉_1920x1080.png", "tasks/活动图片/大富翁/出发_1920x1080.png", "tasks/活动图片/大富翁/出巡仪式_1920x1080.png", "tasks/活动图片/大富翁/胜利_1920x1080.png")
+        while True:
+            self.op.check_stop()
+            _last = self.op.找图(sim=0.9, priority_corner="br")
+            _last = locals().get('_last', {})
+            if any("一锤定音_1920x1080.png" in str(k) for k in _last):
+                if _last:
+                    self.op.点击(*list(_last.values())[0])
+            elif any("借运化吉_1920x1080.png" in str(k) for k in _last):
+                if _last:
+                    self.op.点击(*list(_last.values())[0])
+            elif any("胜利_1920x1080.png" in str(k) for k in _last):
+                if _last:
+                    self.op.点击(*list(_last.values())[0])
+            elif any("出巡仪式_1920x1080.png" in str(k) for k in _last):
+                if _last:
+                    self.op.点击(*list(_last.values())[0])
+            elif any("出发_1920x1080.png" in str(k) for k in _last):
+                self.op.点击(*list(_last.values())[0])
+            self.op.sleep(3.0)

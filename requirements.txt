@@ -9,4 +9,3 @@ numpy
 rapidocr
 onnxruntime
 python-multipart
-platformdirs

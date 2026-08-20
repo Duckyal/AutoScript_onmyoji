@@ -12,11 +12,17 @@
   识别类:
     - find_image              找图，结果存 $last_find
     - find_text               找字(OCR)，结果存 $last_find
-  判断类 (容器，含 children):
-    - if_match                上一步结果命中条件
+  判断类 (容器，含 children + else_children):
+    - if_match                条件分支（命中走 children，否则走 else_children）
+                              match_type: image_has/image_not_has/text_has/text_not_has/empty/not_empty
+                              target 留空时，IF/ELSE 分支内的 click_found 会自动继承本步 target
+                              （仅当该分支语义为"target 出现"时才继承，避免 not_has 误继承）
+                              elif 语义：在 else_children 里再嵌套一个 if_match 即可
   操作类:
     - click_found             点击上一步 $last_find 中的命中项
-    - click                   点击坐标
+                              （target 留空时自动继承最近一层"target 出现"的条件分支 target）
+                              loc 可选：覆盖找图返回的推荐半径 r（>0 生效）
+    - click                   点击坐标（loc=随机偏移半径，0=精确点击中心）
     - long_press              长按坐标
     - swipe                   滑动
     - sleep                   休眠
@@ -31,7 +37,8 @@
       "id": "...",
       "type": "find_image",
       "params": { ... },
-      "children": [ ... ]   // 仅容器类有此字段
+      "children": [ ... ],      // 仅容器类有此字段
+      "else_children": [ ... ]  // 仅 if_match 有此字段（ELSE 分支，可空）
     }
 """
 from __future__ import annotations
@@ -84,14 +91,16 @@ class Task_custom:
     # ------------------------------------------------------------------
     # 调度
     # ------------------------------------------------------------------
-    def _exec_list(self, steps: list[dict], depth: int) -> None:
+    def _exec_list(self, steps: list[dict], depth: int, cond_target: str = "") -> None:
+        """cond_target：最近一层"target 出现"的条件分支传下来的 target，
+        供 click_found 在 target 留空时继承。循环体不主动设值，透传给内部 if_match 自建。"""
         for idx, step in enumerate(steps):
             self.op.check_stop()
             if self.verbose:
                 self.op.log(f"[步骤{idx+1}] type={step.get('type')} depth={depth}")
-            self._exec_one(step, depth=depth)
+            self._exec_one(step, depth=depth, cond_target=cond_target)
 
-    def _exec_one(self, step: dict, depth: int) -> None:
+    def _exec_one(self, step: dict, depth: int, cond_target: str = "") -> None:
         typ = (step.get("type") or "").strip()
         params = step.get("params") or {}
         children = step.get("children") or []
@@ -107,22 +116,19 @@ class Task_custom:
         if typ == "loop_count":
             count = int(params.get("count") or 0)
             times = 0
-            try:
-                while True:
-                    self.op.check_stop()
-                    if count > 0 and times >= count:
-                        break
-                    times += 1
+            while True:
+                self.op.check_stop()
+                if count > 0 and times >= count:
+                    break
+                times += 1
+                if self.verbose:
+                    self.op.log(f"[循环] 第 {times} 次" + (f"/{count}" if count > 0 else ""))
+                try:
+                    self._exec_list(children, depth + 1, cond_target=cond_target)
+                except _CustomBreak:
                     if self.verbose:
-                        self.op.log(f"[循环] 第 {times} 次" + (f"/{count}" if count > 0 else ""))
-                    try:
-                        self._exec_list(children, depth + 1)
-                    except _CustomBreak:
-                        if self.verbose:
-                            self.op.log("[循环] 被 break 跳出")
-                        break
-            except _CustomReturn:
-                raise
+                        self.op.log("[循环] 被 break 跳出")
+                    break
             return
 
         if typ == "loop_until_match":
@@ -131,24 +137,21 @@ class Task_custom:
             if not target:
                 raise ValueError("loop_until_match 需要配置 target")
             iter_num = 0
-            try:
-                while True:
-                    self.op.check_stop()
-                    iter_num += 1
-                    try:
-                        self._exec_list(children, depth + 1)
-                    except _CustomBreak:
-                        if self.verbose:
-                            self.op.log(f"[循环] 第 {iter_num} 次被 break 跳出")
-                        break
-                    # 每次子步骤跑完后用 $last_find 判断是否该退出
-                    last = self.ctx.get("last_find")
-                    if self._match_last_find(last, target_type, target):
-                        if self.verbose:
-                            self.op.log(f"[循环] 命中目标『{target}』，退出循环")
-                        break
-            except _CustomReturn:
-                raise
+            while True:
+                self.op.check_stop()
+                iter_num += 1
+                try:
+                    self._exec_list(children, depth + 1, cond_target=cond_target)
+                except _CustomBreak:
+                    if self.verbose:
+                        self.op.log(f"[循环] 第 {iter_num} 次被 break 跳出")
+                    break
+                # 每次子步骤跑完后用 $last_find 判断是否该退出
+                last = self.ctx.get("last_find")
+                if self._match_last_find(last, target_type, target):
+                    if self.verbose:
+                        self.op.log(f"[循环] 命中目标『{target}』，退出循环")
+                    break
             return
 
         if typ == "find_image":
@@ -166,37 +169,43 @@ class Task_custom:
             return
 
         if typ == "if_match":
-            kind = params.get("kind") or "has"
+            # 兼容旧数据：旧字段 kind → 新字段 match_type（has→image_has, not_has→image_not_has 等）
+            match_type = (params.get("match_type") or params.get("kind") or "image_has").strip()
             target = (params.get("target") or "").strip()
+            else_children = step.get("else_children") or []
             last = self.ctx.get("last_find")
-            hit = self._judge(last, kind, target)
+            hit, positive = self._judge(last, match_type, target)
+            branch = children if hit else else_children
+            branch_name = "IF" if hit else "ELSE"
             if self.verbose:
-                self.op.log(f"[条件] kind={kind} target='{target}' => {'命中' if hit else '不命中'}")
-            if hit:
-                try:
-                    self._exec_list(children, depth + 1)
-                except (_CustomBreak, _CustomReturn):
-                    raise
+                self.op.log(f"[条件] match_type={match_type} target='{target}' => {'命中' if hit else '不命中'} (走{branch_name})")
+            # 仅当该分支语义为"target 出现"时，把 target 传给下层 click_found 继承
+            # (positive==hit 表示当前分支表示 target 存在)；empty/not_empty 无 target 不传
+            branch_means_present = bool(target) and (positive == hit) and match_type not in ("empty", "not_empty")
+            next_cond = target if branch_means_present else cond_target
+            # break/return 在分支内自然穿层到最近一层循环/任务，无需此处 try/except
+            self._exec_list(branch, depth + 1, cond_target=next_cond)
             return
 
         if typ == "click_found":
             target = (params.get("target") or "").strip()
+            # target 留空时自动继承最近一层"target 出现"的条件分支 target
+            if not target:
+                target = cond_target
             miss_skip = bool(params.get("miss_skip", True))
             last = self.ctx.get("last_find")
-            loc = self._pick_location(last, target)
-            if loc is None:
-                if miss_skip:
-                    if self.verbose:
-                        self.op.log(f"[点击] 未命中{'目标 '+target if target else ''}，跳过")
-                    return
-                else:
-                    if self.verbose:
-                        self.op.log(f"[点击] 未命中{'目标 '+target if target else ''}，继续下一步但不点击")
-                    return
-            x, y = loc
-            self.op.点击(x, y)
+            picked = self._pick_location(last, target)
+            if picked is None:
+                if self.verbose:
+                    self.op.log(f"[点击] 未命中{'目标 '+target if target else ''}，{'跳过' if miss_skip else '继续下一步但不点击'}")
+                return
+            x, y, r = picked
+            # loc 覆盖：用户显式传 loc>0 时覆盖找图返回的推荐半径 r
+            loc_override = self._to_num(params.get("loc"))
+            click_loc = loc_override if (loc_override is not None and loc_override > 0) else r
+            self.op.点击(x, y, click_loc)
             if self.verbose:
-                self.op.log(f"[点击] ({x}, {y}) 目标='{target or '默认'}")
+                self.op.log(f"[点击] ({x}, {y}) loc={click_loc} 目标='{target or '默认'}")
             return
 
         if typ == "click":
@@ -204,9 +213,12 @@ class Task_custom:
             y = self._to_num(params.get("y"))
             if x is None or y is None:
                 raise ValueError("点击坐标参数缺失")
-            self.op.点击(x, y)
+            # loc=随机偏移半径；0/缺省=精确点击中心（adb.点击 内部 loc<=3 直接点中心）
+            loc = self._to_num(params.get("loc"))
+            loc = loc if (loc is not None and loc > 0) else 0
+            self.op.点击(x, y, loc)
             if self.verbose:
-                self.op.log(f"[点击] ({x}, {y})")
+                self.op.log(f"[点击] ({x}, {y}) loc={loc}")
             return
 
         if typ == "long_press":
@@ -356,18 +368,20 @@ class Task_custom:
         # 图片名：精确匹配文件名包含即可（允许用户只写"胜利"包含于"胜利_1920x1080.png"）
         return any(target in x for x in s)
 
-    def _judge(self, last, kind: str, target: str) -> bool:
+    def _judge(self, last, kind: str, target: str) -> tuple[bool, bool]:
+        """返回 (是否命中, 当前条件是否表示目标出现)。"""
+        kind = {"has": "image_has", "not_has": "image_not_has"}.get(kind, kind)
         empty = not last
         if kind == "empty":
-            return empty
+            return empty, False
         if kind == "not_empty":
-            return not empty
-        # has / not_has
+            return not empty, False
+        is_positive = kind in ("image_has", "text_has")
         if empty:
-            return kind == "not_has"  # 空则 has 不可能
+            return not is_positive, is_positive
         s = self._last_find_strset(last)
         has = any(target in x for x in s) if target else bool(s)
-        return has if kind == "has" else (not has)
+        return (has if is_positive else not has), is_positive
 
     @staticmethod
     def _pick_location(last, target: str):
@@ -395,7 +409,8 @@ class Task_custom:
             # 找图返回 (x, y, w, h, cx, cy, val)；找字返回 (x, y, w, h)；我们取前两项
             if isinstance(val, (list, tuple)) and len(val) >= 2:
                 x, y = val[0], val[1]
-                return (x, y)
+                radius = val[2] if len(val) >= 6 else 0
+                return (x, y, radius)
         except Exception:
             return None
         return None

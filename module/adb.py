@@ -274,6 +274,25 @@ class ADB():
         '''
         self.滑动(start_x, start_y, end_x, end_y, count, delay)
 
+    def long_press(self, x:int, y:int, duration:float=1.5, jitter:float=0.1):
+        '''
+        x, y: 长按坐标
+        duration: 持续时间（秒），默认 1.5
+        jitter: 随机时间前后偏移值，默认 0.1
+        '''
+        self.长按(x, y, duration, jitter)
+
+    def multi_point_slide(self, points, delay: float = 0.0):
+        '''
+        Slide along a user-drawn trajectory point sequence (for the dev page freehand curve).
+        :param points: list of trajectory points, e.g. [[x1, y1], [x2, y2], ...], at least 2 points
+        :param delay: fixed interval between moves (seconds). Default 0 = no wait,
+                      playback speed is only limited by the HTTP round-trip of touch.move (most responsive);
+                      set to 0.002~0.005 if points are dropped or jittery
+        :return: number of points actually played back
+        '''
+        return self.多点位滑动(points, delay)
+
     def input_text(self, txt:str):
         '''
         txt: 要输入的文本
@@ -385,7 +404,7 @@ class ADB():
         '''
         X, Y = x, y
         self.d.click(X, Y)
-        self.log('简单点击{0} {1}'.format(X, Y), 'debug')
+        self.log('简单点击({0}, {1})'.format(X, Y), 'debug')
         self.重置定时器()
         
     def 点击(self, center_x: int, center_y: int, loc: int, *els):
@@ -457,7 +476,53 @@ class ADB():
         self.d.touch.up(end_x, end_y)
         self.log('模拟滑动{0} {1} -> {2} {3}'.format(start_x, start_y, end_x, end_y), 'debug')
         self.重置定时器()
-        
+
+    def 多点位滑动(self, points, delay: float = 0.0):
+        '''
+        按用户绘制的轨迹点序列执行曲线滑动（用于开发页面手绘曲线）。
+        :param points: 轨迹点列表，形如 [[x1, y1], [x2, y2], ...]，至少 2 个点
+        :param delay: 相邻两点之间的间隔时间（秒）。默认 0 走最快路径（设备本地按 5ms/step 节流）。
+                      预估总时长 ≈ (点数 - 1) × max(0.01, delay)
+        :return: 实际回放的点数
+
+        实现说明：
+        主路径走 u2.swipe_points —— 一次 HTTP 把所有点数组发给 atx-agent，由设备本地的
+        Android UiDevice.swipe(Point[], steps) 按 5ms/step 节流回放完整轨迹。
+        相比旧的 touch.down/move/up 逐点注入（每个 move 一次 HTTP JSONRPC 往返，n 个点要 n 次往返），
+        批量调用快约 3-5 倍，且无网络抖动。
+        若 swipe_points 在某些设备/定制 ROM 上失败，自动回退到逐点 touch 注入。
+        '''
+        if not points or len(points) < 2:
+            self.log('曲线滑动：轨迹点不足，至少需要 2 个点', 'warning')
+            return 0
+
+        n = len(points)
+        pts = [(int(p[0]), int(p[1])) for p in points]
+        start_x, start_y = pts[0]
+        end_x, end_y = pts[-1]
+
+        # delay 即 per-segment duration（相邻两点之间的时长）；
+        # swipe_points 内部 steps = duration/0.005，swipe_points 无 max(2,steps) 兜底，
+        # 故 clamp 到 0.01 保证 steps>=2，否则 steps=0 会空操作
+        seg_duration = max(0.01, delay)
+        try:
+            self.d.swipe_points(pts, seg_duration)
+            self.log(f'多点位曲线滑动(swipe_points): {n} 个点, ({start_x},{start_y}) -> ({end_x},{end_y}), 预估≈{(n-1)*seg_duration:.3f}s', 'debug')
+        except Exception as e:
+            # fallback：老设备/定制 ROM 上 swipe_points 可能失败，退回逐点 touch 注入（每个 move 一次 HTTP 往返）
+            self.log(f'swipe_points 失败，回退逐点 touch 注入: {e}', 'warning')
+            self.d.touch.down(start_x, start_y)
+            for x, y in pts[1:-1]:
+                self.d.touch.move(x, y)
+                if delay > 0:
+                    time.sleep(delay)
+            self.d.touch.up(end_x, end_y)
+            self.log(f'多点位曲线滑动(逐点 fallback): {n} 个点, ({start_x},{start_y}) -> ({end_x},{end_y})', 'debug')
+
+        self.重置定时器()
+        return n
+
+
     def 输入(self, txt:str):
         self.d.clear_text() # 清除输入框所有内容
         self.d.send_keys(txt)
@@ -1289,6 +1354,9 @@ class ADB():
                         self.log('找字：'+str(result_dict.get(target_txt, None)), 'debug')
                     return result_dict.get(target_txt, None)
                 
+        except (ConnectionError, TimeoutError, OSError) as e:
+            self.log(f"设备连接异常: {e}", 'error')
+            raise
         except Exception as e:
             self.log(f"文本识别逻辑处理出错: {e}", 'error')
             return None

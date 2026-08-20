@@ -278,6 +278,7 @@ const CustomStepsEditor = {
       params
     };
     if (tmpl?.isContainer) step.children = [];
+    if (type === 'if_match') step.else_children = [];
     return step;
   },
 
@@ -286,6 +287,7 @@ const CustomStepsEditor = {
     for (let i = 0; i < list.length; i++) {
       if (list[i].id === stepId) { list.splice(i, 1); return true; }
       if (list[i].children && this._remove(stepId, list[i].children)) return true;
+      if (list[i].else_children && this._remove(stepId, list[i].else_children)) return true;
     }
     return false;
   },
@@ -295,6 +297,10 @@ const CustomStepsEditor = {
       if (list[i].id === stepId) return { list, index: i };
       if (list[i].children) {
         const r = this._findParentList(stepId, list[i].children, list[i]);
+        if (r) return r;
+      }
+      if (list[i].else_children) {
+        const r = this._findParentList(stepId, list[i].else_children, list[i]);
         if (r) return r;
       }
     }
@@ -320,6 +326,24 @@ const CustomStepsEditor = {
           return true;
         }
         if (s.children && walk(s.children)) return true;
+        if (s.else_children && walk(s.else_children)) return true;
+      }
+      return false;
+    };
+    walk(this.steps);
+    this.render();
+  },
+
+  _addElseChild(containerId, type = 'find_image') {
+    const walk = (list) => {
+      for (const s of list) {
+        if (s.id === containerId && s.type === 'if_match') {
+          if (!s.else_children) s.else_children = [];
+          s.else_children.push(this._makeStep(type));
+          return true;
+        }
+        if (s.children && walk(s.children)) return true;
+        if (s.else_children && walk(s.else_children)) return true;
       }
       return false;
     };
@@ -335,6 +359,7 @@ const CustomStepsEditor = {
     const reId = (node) => {
       node.id = 's_' + Math.random().toString(36).slice(2, 9);
       (node.children || []).forEach(reId);
+      (node.else_children || []).forEach(reId);
     };
     reId(cloned);
     p.list.splice(p.index + 1, 0, cloned);
@@ -441,36 +466,48 @@ const CustomStepsEditor = {
     (tmpl?.params || []).forEach(p => body.appendChild(this._renderParam(step, p)));
     wrap.appendChild(body);
 
-    // --- 容器（循环/条件）：子步骤列表 + 「+ 加子步骤」 ---
+    // --- 容器：循环只有 children，条件分支同时提供 IF/ELSE ---
     if (tmpl?.isContainer) {
-      const childrenWrap = document.createElement('div');
-      childrenWrap.className = 'custom-step__children';
-      if (!step.children) step.children = [];
-      if (step.children.length) {
-        step.children.forEach((child, ci) => {
-          childrenWrap.appendChild(this._renderStep(child, ci, step.children, depth + 1));
-        });
-      } else {
-        const empty = document.createElement('div');
-        empty.className = 'custom-steps__empty custom-steps__empty--small';
-        empty.textContent = '还没有子步骤';
-        childrenWrap.appendChild(empty);
-      }
-      // 子步骤操作栏：加一个 find_image 子步骤 + 下拉选择其他类型
-      const addBar = document.createElement('div');
-      addBar.className = 'custom-step__child-add';
-      const addSelect = document.createElement('select');
-      addSelect.innerHTML = STEP_TYPES.map(t => `<option value="${t.value}">${t.label}</option>`).join('');
-      const addBtn = document.createElement('button');
-      addBtn.type = 'button';
-      addBtn.className = 'btn btn--ghost btn--sm';
-      addBtn.textContent = '+ 加子步骤';
-      addBtn.addEventListener('click', () => this._addChild(step.id, addSelect.value));
-      addBar.appendChild(addSelect);
-      addBar.appendChild(addBtn);
-      childrenWrap.appendChild(addBar);
+      const renderBranch = (title, key, addHandler) => {
+        const branchWrap = document.createElement('div');
+        branchWrap.className = 'custom-step__children';
+        if (!step[key]) step[key] = [];
 
-      wrap.appendChild(childrenWrap);
+        const branchTitle = document.createElement('div');
+        branchTitle.textContent = title;
+        branchTitle.style.cssText = 'font-weight:600;margin:8px 0 4px;color:#475569;';
+        branchWrap.appendChild(branchTitle);
+
+        if (step[key].length) {
+          step[key].forEach((child, ci) => {
+            branchWrap.appendChild(this._renderStep(child, ci, step[key], depth + 1));
+          });
+        } else {
+          const empty = document.createElement('div');
+          empty.className = 'custom-steps__empty custom-steps__empty--small';
+          empty.textContent = '还没有子步骤';
+          branchWrap.appendChild(empty);
+        }
+
+        const addBar = document.createElement('div');
+        addBar.className = 'custom-step__child-add';
+        const addSelect = document.createElement('select');
+        addSelect.innerHTML = STEP_TYPES.map(t => `<option value="${t.value}">${t.label}</option>`).join('');
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'btn btn--ghost btn--sm';
+        addBtn.textContent = '+ 加子步骤';
+        addBtn.addEventListener('click', () => addHandler(step.id, addSelect.value));
+        addBar.appendChild(addSelect);
+        addBar.appendChild(addBtn);
+        branchWrap.appendChild(addBar);
+        return branchWrap;
+      };
+
+      wrap.appendChild(renderBranch('IF 命中时执行', 'children', (id, type) => this._addChild(id, type)));
+      if (step.type === 'if_match') {
+        wrap.appendChild(renderBranch('ELSE 未命中时执行', 'else_children', (id, type) => this._addElseChild(id, type)));
+      }
     }
 
     return wrap;

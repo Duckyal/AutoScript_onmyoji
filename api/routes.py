@@ -4,6 +4,7 @@ from fastapi.responses import StreamingResponse, JSONResponse, Response
 import asyncio
 import time
 import os
+import json
 import queue as _queue_mod
 from pathlib import Path
 
@@ -98,22 +99,46 @@ def get_current_frame(device_name: str):
     except ValueError:
         return JSONResponse(status_code=400, content={"success": False, "message": "画面未加载"})
 
-# --- 控制与输入 ---
+# --- 控制与输入（统一接口，按 action 分发）---
 @router.post("/api/input")
 async def handle_input(
     device_name: str = Form(...), action: str = Form(...),
-    x1: int = Form(...), y1: int = Form(...),
-    x2: int = Form(0), y2: int = Form(0), duration: int = Form(0)
+    x1: int = Form(0), y1: int = Form(0),
+    x2: int = Form(0), y2: int = Form(0), duration: int = Form(0),
+    points: str = Form(''),      # JSON 轨迹点数组，仅 action=swipe_path 使用
+    delay: float = Form(0.01)    # 仅 action=swipe_path 使用
 ):
-    # 这里也可以调用 module/adb.py 里的类方法，看你喜好
+    """
+    统一输入接口，按 action 分发到 ADB 类的对应方法（均用 uiautomator2 的 touch API，更拟人）：
+    - tap:        简单点击(x1, y1)
+    - longpress:  长按(x1, y1, duration/1000)   前端 duration 为毫秒，内部转秒
+    - swipe:      滑动(x1, y1, x2, y2)          贝塞尔曲线轨迹（比 input swipe 直线更拟人）
+    - swipe_path: 曲线滑动(points, delay)        前端手绘轨迹点回放
+    """
     try:
         device = ADB(device_name)
         if action == "tap":
-            device.adb_shell(f"input tap {x1} {y1}")
-        elif action == "swipe":
-            device.adb_shell(f"input swipe {x1} {y1} {x2} {y2} {duration}")
+            await asyncio.to_thread(device.简单点击, x1, y1)
         elif action == "longpress":
-            device.adb_shell(f"input swipe {x1} {y1} {x1} {y1} {duration}")         
+            # 前端 duration 为毫秒，长按方法接收秒
+            await asyncio.to_thread(device.长按, x1, y1, duration / 1000.0)
+        elif action == "swipe":
+            await asyncio.to_thread(device.滑动, x1, y1, x2, y2)
+        elif action == "swipe_path":
+            try:
+                pts = json.loads(points) if points else []
+            except Exception:
+                return JSONResponse(status_code=400, content={"success": False, "message": "points 不是合法的 JSON"})
+            clean_pts = []
+            for p in pts:
+                if not (isinstance(p, (list, tuple)) and len(p) >= 2):
+                    continue
+                clean_pts.append([int(round(float(p[0]))), int(round(float(p[1])))])
+            if len(clean_pts) < 2:
+                return JSONResponse(status_code=400, content={"success": False, "message": "有效轨迹点不足"})
+            await asyncio.to_thread(device.多点位滑动, clean_pts, delay)
+        else:
+            return JSONResponse(status_code=400, content={"success": False, "message": f"未知 action: {action}"})
         return {"success": True, "message": "操作已发送"}
     except Exception as e:
         return JSONResponse(status_code=500, content={"success": False, "message": str(e)})

@@ -326,6 +326,9 @@ function checkOrientation() {
 
 checkOrientation();
 let isDrawing = false;
+let isSwiping = false;          // 非截图模式下的手绘滑动状态
+let swipePath = [];             // 手绘轨迹点数组（设备真实坐标 {x, y}）
+const SWIPE_MIN_POINT_DIST = 5; // 轨迹采样最小间距（设备坐标 px），小于此距离不记录
 let startX = 0, startY = 0;
 let startClientX = 0, startClientY = 0;
 let croppedBlob = null;
@@ -510,7 +513,7 @@ streamContainer.addEventListener('mousedown', (e) => {
         isDrawing = true;
         startClientX = e.clientX;
         startClientY = e.clientY;
-        
+
         const cRect = streamContainer.getBoundingClientRect();
         let rawX = e.clientX - cRect.left;
         let rawY = e.clientY - cRect.top;
@@ -523,26 +526,41 @@ streamContainer.addEventListener('mousedown', (e) => {
         overlay.style.width = '0px';
         overlay.style.height = '0px';
         overlay.style.display = 'block';
+    } else {
+        // 非截图模式：开始采集手绘滑动轨迹（起点先入数组）
+        isSwiping = true;
+        swipePath = [{ x: mouseDownCoords.x, y: mouseDownCoords.y }];
     }
 });
 
 streamContainer.addEventListener('mousemove', (e) => {
-    if (!isDrawing) return;
-    const cRect = streamContainer.getBoundingClientRect();
+    if (isDrawing) {
+        const cRect = streamContainer.getBoundingClientRect();
 
-    let currentX = e.clientX - cRect.left;
-    let currentY = e.clientY - cRect.top;
+        let currentX = e.clientX - cRect.left;
+        let currentY = e.clientY - cRect.top;
 
-    currentX = Math.max(0, Math.min(currentX, cRect.width));
-    currentY = Math.max(0, Math.min(currentY, cRect.height));
+        currentX = Math.max(0, Math.min(currentX, cRect.width));
+        currentY = Math.max(0, Math.min(currentY, cRect.height));
 
-    const width = currentX - startX;
-    const height = currentY - startY;
+        const width = currentX - startX;
+        const height = currentY - startY;
 
-    overlay.style.left = (width < 0 ? currentX : startX) + 'px';
-    overlay.style.top = (height < 0 ? currentY : startY) + 'px';
-    overlay.style.width = Math.abs(width) + 'px';
-    overlay.style.height = Math.abs(height) + 'px';
+        overlay.style.left = (width < 0 ? currentX : startX) + 'px';
+        overlay.style.top = (height < 0 ? currentY : startY) + 'px';
+        overlay.style.width = Math.abs(width) + 'px';
+        overlay.style.height = Math.abs(height) + 'px';
+        return;
+    }
+    if (!isSwiping) return;
+
+    // 采集手绘轨迹点（真实设备坐标），按最小距离过滤，避免点过密
+    const c = getRealCoords(e.clientX, e.clientY);
+    const last = swipePath[swipePath.length - 1];
+    const dx = c.x - last.x;
+    const dy = c.y - last.y;
+    if (dx * dx + dy * dy < SWIPE_MIN_POINT_DIST * SWIPE_MIN_POINT_DIST) return;
+    swipePath.push({ x: c.x, y: c.y });
 });
 
 streamContainer.addEventListener('mouseup', async (e) => {
@@ -564,13 +582,24 @@ streamContainer.addEventListener('mouseup', async (e) => {
 
         performCrop(realX, realY, cropW, cropH, () => {});
 
-    } else {
+    } else if (isSwiping) {
+        isSwiping = false;
         const endCoords = getRealCoords(e.clientX, e.clientY);
         const duration = Date.now() - mouseDownTime;
         const distX = Math.abs(endCoords.x - mouseDownCoords.x);
         const distY = Math.abs(endCoords.y - mouseDownCoords.y);
 
-        sendInputAction(endCoords, duration, distX, distY);
+        // 轨迹点足够且位移足够 → 曲线滑动；否则回退到 tap/longpress/短滑动
+        if (swipePath.length >= 2 && (distX >= 15 || distY >= 15)) {
+            // 确保终点纳入轨迹（mouseup 的最后一次采样可能被最小距离过滤掉）
+            const last = swipePath[swipePath.length - 1];
+            if (last.x !== endCoords.x || last.y !== endCoords.y) {
+                swipePath.push({ x: endCoords.x, y: endCoords.y });
+            }
+            sendSwipePath(swipePath);
+        } else {
+            sendInputAction(endCoords, duration, distX, distY);
+        }
     }
 });
 
@@ -599,29 +628,45 @@ streamContainer.addEventListener('touchstart', (e) => {
         overlay.style.width = '0px';
         overlay.style.height = '0px';
         overlay.style.display = 'block';
+    } else {
+        // 非截图模式：开始采集手绘滑动轨迹
+        isSwiping = true;
+        swipePath = [{ x: mouseDownCoords.x, y: mouseDownCoords.y }];
     }
 }, { passive: false });
 
 streamContainer.addEventListener('touchmove', (e) => {
-    if (!isDrawing) return;
+    if (isDrawing) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const cRect = streamContainer.getBoundingClientRect();
+
+        let currentX = touch.clientX - cRect.left;
+        let currentY = touch.clientY - cRect.top;
+
+        currentX = Math.max(0, Math.min(currentX, cRect.width));
+        currentY = Math.max(0, Math.min(currentY, cRect.height));
+
+        const width = currentX - startX;
+        const height = currentY - startY;
+
+        overlay.style.left = (width < 0 ? currentX : startX) + 'px';
+        overlay.style.top = (height < 0 ? currentY : startY) + 'px';
+        overlay.style.width = Math.abs(width) + 'px';
+        overlay.style.height = Math.abs(height) + 'px';
+        return;
+    }
+    if (!isSwiping) return;
     e.preventDefault();
-    
+
+    // 采集手绘轨迹点（真实设备坐标），按最小距离过滤
     const touch = e.touches[0];
-    const cRect = streamContainer.getBoundingClientRect();
-
-    let currentX = touch.clientX - cRect.left;
-    let currentY = touch.clientY - cRect.top;
-
-    currentX = Math.max(0, Math.min(currentX, cRect.width));
-    currentY = Math.max(0, Math.min(currentY, cRect.height));
-
-    const width = currentX - startX;
-    const height = currentY - startY;
-
-    overlay.style.left = (width < 0 ? currentX : startX) + 'px';
-    overlay.style.top = (height < 0 ? currentY : startY) + 'px';
-    overlay.style.width = Math.abs(width) + 'px';
-    overlay.style.height = Math.abs(height) + 'px';
+    const c = getRealCoords(touch.clientX, touch.clientY);
+    const last = swipePath[swipePath.length - 1];
+    const dx = c.x - last.x;
+    const dy = c.y - last.y;
+    if (dx * dx + dy * dy < SWIPE_MIN_POINT_DIST * SWIPE_MIN_POINT_DIST) return;
+    swipePath.push({ x: c.x, y: c.y });
 }, { passive: false });
 
 streamContainer.addEventListener('touchend', async (e) => {
@@ -644,15 +689,37 @@ streamContainer.addEventListener('touchend', async (e) => {
 
         performCrop(realX, realY, cropW, cropH, () => {});
 
-    } else {
+    } else if (isSwiping) {
+        isSwiping = false;
         const endCoords = getRealCoords(touch.clientX, touch.clientY);
         const duration = Date.now() - mouseDownTime;
         const distX = Math.abs(endCoords.x - mouseDownCoords.x);
         const distY = Math.abs(endCoords.y - mouseDownCoords.y);
 
-        sendInputAction(endCoords, duration, distX, distY);
+        // 轨迹点足够且位移足够 → 曲线滑动；否则回退到 tap/longpress/短滑动
+        if (swipePath.length >= 2 && (distX >= 15 || distY >= 15)) {
+            const last = swipePath[swipePath.length - 1];
+            if (last.x !== endCoords.x || last.y !== endCoords.y) {
+                swipePath.push({ x: endCoords.x, y: endCoords.y });
+            }
+            sendSwipePath(swipePath);
+        } else {
+            sendInputAction(endCoords, duration, distX, distY);
+        }
     }
 }, { passive: false });
+
+/** 将手绘轨迹点发送到后端 /api/input（action=swipe_path）执行曲线滑动 */
+function sendSwipePath(path) {
+    if (!path || path.length < 2) return;
+    const points = path.map(p => [p.x, p.y]);
+    const formData = new FormData();
+    formData.append('device_name', deviceName);
+    formData.append('action', 'swipe_path');
+    formData.append('points', JSON.stringify(points));
+    formData.append('delay', '0');   // 0 = 不额外 sleep，回放只受 touch.move 网络耗时限制，最跟手
+    fetch('/api/input', { method: 'POST', body: formData }).catch(err => console.error('曲线滑动发送失败:', err));
+}
 
 function sendInputAction(endCoords, duration, distX, distY) {
     const formData = new FormData();

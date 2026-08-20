@@ -1,3 +1,4 @@
+import re
 from module.adb import ADB
 
 
@@ -25,7 +26,11 @@ class Task_douji:
                     if result is None:
                         continue
                     for key in result:
-                        a, b = key.split('/')
+                        # 用正则精确提取 "数字/数字"，避免文本中含多个 '/' 导致 split 解包失败
+                        match = re.search(r'(\d{2,})/(\d{2,})', key)
+                        if not match:
+                            continue
+                        a, b = match.group(1), match.group(2)
                         if a == b:  # 脚本结束
                             state = 1
                         break
