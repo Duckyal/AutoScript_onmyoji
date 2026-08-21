@@ -50,7 +50,7 @@ class Task_tupo:
                 x, y, r = result["入口_1920x1080.png"][0], result["入口_1920x1080.png"][1], result["入口_1920x1080.png"][2]
 
                 # 检测突破券数量
-                result_txt = self.op.找字(x1=0.7, y2=0.1, target_txt=r"\d+/30", use_regex=True)
+                result_txt = self.op.找字(x1=0.7, y2=0.1, target_txt="\d+/30", use_regex=True)
                 if result_txt:
                     a = result_txt[0].split("/")[0]
                     if a == "0":

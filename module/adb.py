@@ -70,6 +70,7 @@ class ADB():
                 self.d = u2.connect(device_id)
                 
             self.engine = RapidOCR()
+
             # 标记当前这个实例已经初始化完毕
             self._is_initialized = True
         except Exception as e:
@@ -376,6 +377,17 @@ class ADB():
             
     def 获取截图(self, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1):
         img = self.d.screenshot(format='opencv')
+        h, w = img.shape[:2]
+        # 设备旋转/分辨率变化时自动校准缓存，避免按旧分辨率裁剪越界返回空图
+        if self.width != w or self.height != h:
+            self.log(f'分辨率变化，已自动校准: {w}x{h}', 'debug')
+            self.width, self.height = w, h
+            # 设备可能已重启/分辨率变更：失效缩放比与模板金字塔，强制下次重新适配，
+            # 避免按旧缩放比匹配模板导致误匹配
+            self.current_scale = None
+            self.current_scale_x = None
+            self.current_scale_y = None
+            self._pyramid_cache.clear()
         if x1 != -1:
             x1 = int(self.width*x1) if isinstance(x1, float) else x1
         else:
@@ -394,6 +406,14 @@ class ADB():
         else:
             y2 = self.height
 
+        # 边界钳制，防止坐标越界导致 numpy 切片返回空图
+        x1 = max(0, min(int(x1), w))
+        x2 = max(0, min(int(x2), w))
+        y1 = max(0, min(int(y1), h))
+        y2 = max(0, min(int(y2), h))
+        if x2 <= x1 or y2 <= y1:
+            self.log('获取截图：裁剪区域无效，返回全屏截图', 'debug')
+            return img
         return img[y1:y2, x1:x2, :] # type: ignore
         
                      
@@ -1288,7 +1308,7 @@ class ADB():
         x1, y1, x2, y2: 截图区域坐标，默认为 -1 表示全屏
         Specified_image: 指定图片（如果不提供则使用当前截图）
         target_txt: 目标文本（如果不提供则返回所有文本框信息），支持正则表达式，返回值为匹配到的文本对应坐标或None
-        use_regex: 是否启用正则匹配，默认为 False,;为True则返回值将为匹配到的文本列表，为False则返回匹配到的文本及其坐标
+        use_regex: 是否启用正则匹配，默认为 False,为True则返回值将为匹配到的文本列表，为False则返回匹配到的文本及其坐标
         '''
         check_timeout(self.device_id)
         

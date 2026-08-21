@@ -98,14 +98,19 @@ class Task_huodong:
                 self.op.sleep(1)
 
     def type2(self):
-        self.op.图片预加载("tasks/活动图片/大富翁/一锤定音_1920x1080.png", "tasks/活动图片/大富翁/借运化吉_1920x1080.png", "tasks/活动图片/大富翁/出发_1920x1080.png", "tasks/活动图片/大富翁/出巡仪式_1920x1080.png", "tasks/活动图片/大富翁/胜利_1920x1080.png")
+        self.op.图片预加载("tasks/活动图片/大富翁/一锤定音_1920x1080.png", "tasks/活动图片/大富翁/借运化吉_1920x1080.png", "tasks/活动图片/大富翁/出发_1920x1080.png",
+                         "tasks/活动图片/大富翁/出巡仪式_1920x1080.png", "tasks/活动图片/大富翁/胜利_1920x1080.png", "tasks/活动图片/大富翁/结束_1920x1080.png")
         while True:
             self.op.check_stop()
             _last = self.op.找图(sim=0.9, priority_corner="br")
             _last = locals().get('_last', {})
-            if any("一锤定音_1920x1080.png" in str(k) for k in _last):
-                if _last:
-                    self.op.点击(*list(_last.values())[0])
+            if any("结束_1920x1080.png" in str(k) for k in _last):
+                return
+            elif any("一锤定音_1920x1080.png" in str(k) for k in _last):
+                txts = self.op.找字(y1=0.5, target_txt="\d", use_regex=True)
+                if txts:
+                    max_num = str(max((k for k in txts.keys() if k.replace('.', '', 1).isdigit()), key=lambda k: float(k)))
+                    self.op.点击(txts[max_num][0]-txts[max_num][2], txts[max_num][1]+2*txts[max_num][2], txts[max_num][2]//2)
             elif any("借运化吉_1920x1080.png" in str(k) for k in _last):
                 if _last:
                     self.op.点击(*list(_last.values())[0])

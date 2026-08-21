@@ -198,14 +198,20 @@ async def find_image(
     
     device = ADB(device_name)
     
+    img_bytes = None
     if image and image.filename:
         img_bytes = await image.read()
-        device.图片预加载(img_bytes)
-    else:
-        main_img = device.获取截图(x1_val, y1_val, x2_val, y2_val)
-        device.图片预加载(main_img)
     
-    result = device.找图(sim=sim, priority_corner=priority_corner, x1=x1_val, y1=y1_val, x2=x2_val, y2=y2_val)
+    # 同步耗时操作（截图/预加载/模板匹配）放入线程池，避免阻塞事件循环导致视频流卡住
+    def _do_find_image():
+        if img_bytes:
+            device.图片预加载(img_bytes)
+        else:
+            main_img = device.获取截图(x1_val, y1_val, x2_val, y2_val)
+            device.图片预加载(main_img)
+        return device.找图(sim=sim, priority_corner=priority_corner, x1=x1_val, y1=y1_val, x2=x2_val, y2=y2_val)
+    
+    result = await asyncio.to_thread(_do_find_image)
     print(result)
     return {"result": str(result)}
 
@@ -230,12 +236,17 @@ async def ocr_text(
     
     device = ADB(device_name)
     
+    img_bytes = None
     if image and image.filename:
         img_bytes = await image.read()
-        result = device.找字(Specified_image=img_bytes, target_txt=target_txt, use_regex=use_regex, x1=x1_val, y1=y1_val, x2=x2_val, y2=y2_val)
-    else:
-        result = device.找字(target_txt=target_txt, use_regex=use_regex, x1=x1_val, y1=y1_val, x2=x2_val, y2=y2_val)
     
+    # 同步耗时操作（OCR）放入线程池，避免阻塞事件循环导致视频流卡住
+    def _do_ocr():
+        if img_bytes:
+            return device.找字(Specified_image=img_bytes, target_txt=target_txt, use_regex=use_regex, x1=x1_val, y1=y1_val, x2=x2_val, y2=y2_val)
+        return device.找字(target_txt=target_txt, use_regex=use_regex, x1=x1_val, y1=y1_val, x2=x2_val, y2=y2_val)
+    
+    result = await asyncio.to_thread(_do_ocr)
     print(result)
     return {"result": str(result)}
 
@@ -312,12 +323,13 @@ async def run_task(request: Request):
                     if end_err:
                         content_lines.append(f"错误信息: {end_err}")
                     content = "\n".join(content_lines)
-                    result = send_email(subject, content)
-                    if result["success"]:
-                        ws_manager.log(f"任务结束邮件已发送至 {load_email_config().get('receiver_email', '')}", "success")
-                    else:
-                        if result["message"] not in ("任务结束提醒未开启",):
-                            ws_manager.log(f"提醒邮件未送达: {result['message']}", "warning")
+                    if end_status != "被手动终止":
+                        result = send_email(subject, content)
+                        if result["success"]:
+                            ws_manager.log(f"任务结束邮件已发送至 {load_email_config().get('receiver_email', '')}", "success")
+                        else:
+                            if result["message"] not in ("任务结束提醒未开启",):
+                                ws_manager.log(f"提醒邮件未送达: {result['message']}", "warning")
                 except Exception as mail_ex:
                     ws_manager.log(f"发送提醒邮件出错: {mail_ex}", "warning")
         

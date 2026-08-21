@@ -839,7 +839,12 @@ if (btnFindText) {
         formData.append('x2', x2);
         formData.append('y2', y2);
         
-        if (croppedBlob) {
+        // 未框选/上传图片时，自动按当前区域坐标从视频流截取一帧用于 OCR
+        if (!croppedBlob) {
+            resultOutput.value = '未框选区域，正在自动截取当前区域...';
+            const autoBlob = await captureRegionFromStream();
+            if (autoBlob) formData.append('image', autoBlob, 'ocr.png');
+        } else {
             formData.append('image', croppedBlob, 'ocr.png');
         }
         
@@ -862,4 +867,63 @@ if (btnClearRegion) {
         document.getElementById('region-x2').value = '-1';
         document.getElementById('region-y2').value = '-1';
     });
+}
+
+// 预览区域：根据 region-x1/y1/x2/y2 的当前值（-1=全屏，小数=长/宽比值，整数=像素）
+// 从视频流截取对应区域并显示到 crop-preview，与后端 /api/find_image 的小数语义保持一致
+// 返回 Promise<Blob|null>：成功截取返回 blob（并已更新 croppedBlob/预览图/坐标框），失败返回 null
+function captureRegionFromStream() {
+    return new Promise((resolve) => {
+        const parseRegionVal = (id) => {
+            const str = document.getElementById(id).value.trim();
+            if (str === '' || isNaN(parseFloat(str))) return -1;
+            // 与后端一致：含小数点按比值处理，否则按像素
+            return str.includes('.') ? parseFloat(str) : parseInt(str, 10);
+        };
+        const x1v = parseRegionVal('region-x1');
+        const y1v = parseRegionVal('region-y1');
+        const x2v = parseRegionVal('region-x2');
+        const y2v = parseRegionVal('region-y2');
+
+        const size = getStreamNaturalSize();
+        if (!size.width || !size.height) {
+            alert('视频流尚未加载，无法预览');
+            resolve(null);
+            return;
+        }
+        const W = size.width;
+        const H = size.height;
+
+        // 起点坐标 -1 表示 0，终点坐标 -1 表示宽/高；小数按比例换算
+        const toStart = (v, max) => v === -1 ? 0 : (Number.isInteger(v) ? v : Math.round(v * max));
+        const toEnd = (v, max) => v === -1 ? max : (Number.isInteger(v) ? v : Math.round(v * max));
+
+        let x1 = Math.max(0, Math.min(toStart(x1v, W), W));
+        let y1 = Math.max(0, Math.min(toStart(y1v, H), H));
+        let x2 = Math.max(0, Math.min(toEnd(x2v, W), W));
+        let y2 = Math.max(0, Math.min(toEnd(y2v, H), H));
+
+        if (x2 < x1) { const t = x1; x1 = x2; x2 = t; }
+        if (y2 < y1) { const t = y1; y1 = y2; y2 = t; }
+
+        const realX = Math.round(x1);
+        const realY = Math.round(y1);
+        const cropW = Math.round(x2 - x1);
+        const cropH = Math.round(y2 - y1);
+        if (cropW <= 0 || cropH <= 0) {
+            alert('区域无效（宽或高为 0）');
+            resolve(null);
+            return;
+        }
+
+        performCrop(realX, realY, cropW, cropH, (blob) => {
+            if (!blob) alert('预览失败：无法截取当前帧');
+            resolve(blob);
+        });
+    });
+}
+
+const btnPreviewRegion = document.getElementById('btn-preview-region');
+if (btnPreviewRegion) {
+    btnPreviewRegion.addEventListener('click', () => captureRegionFromStream());
 }
