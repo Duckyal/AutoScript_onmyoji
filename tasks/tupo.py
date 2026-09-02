@@ -52,7 +52,7 @@ class Task_tupo:
                 # 检测突破券数量
                 result_txt = self.op.找字(x1=0.7, y2=0.1, target_txt="\d+/30", use_regex=True)
                 if result_txt:
-                    a = result_txt[0].split("/")[0]
+                    a = list(result_txt.keys())[0].split("/")[0]
                     if a == "0":
                         self.op.点击(*result["退出_1920x1080.png"])
                         self.op.sleep(3)

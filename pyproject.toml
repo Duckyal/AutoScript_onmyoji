@@ -12,7 +12,7 @@ dependencies = [
     "jinja2>=3.0.0",
     "requests",
     "uiautomator2",
-    "opencv-python",
+    "opencv-python-headless",
     "numpy",
     "rapidocr",
     "onnxruntime>=1.16.0; python_version>='3.11'",

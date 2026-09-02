@@ -334,6 +334,7 @@ let startClientX = 0, startClientY = 0;
 let croppedBlob = null;
 let mouseDownTime = 0;
 let mouseDownCoords = {x: 0, y: 0};
+const LONG_PRESS_MS = 500;  // 无位移且按住超过该时长 → longpress；否则 tap
 
 let deviceResolution = { width: 0, height: 0 };
 
@@ -527,9 +528,9 @@ streamContainer.addEventListener('mousedown', (e) => {
         overlay.style.height = '0px';
         overlay.style.display = 'block';
     } else {
-        // 非截图模式：开始采集手绘滑动轨迹（起点先入数组）
+        // 非截图模式：开始采集手绘滑动轨迹（起点先入数组，t=0 相对按下时刻）
         isSwiping = true;
-        swipePath = [{ x: mouseDownCoords.x, y: mouseDownCoords.y }];
+        swipePath = [{ x: mouseDownCoords.x, y: mouseDownCoords.y, t: 0 }];
     }
 });
 
@@ -560,7 +561,8 @@ streamContainer.addEventListener('mousemove', (e) => {
     const dx = c.x - last.x;
     const dy = c.y - last.y;
     if (dx * dx + dy * dy < SWIPE_MIN_POINT_DIST * SWIPE_MIN_POINT_DIST) return;
-    swipePath.push({ x: c.x, y: c.y });
+    // 记录相对按下时刻的时间戳，后端按真实耗时逐段回放（长按拖动=按住期间无点，回放时自然停留）
+    swipePath.push({ x: c.x, y: c.y, t: Date.now() - mouseDownTime });
 });
 
 streamContainer.addEventListener('mouseup', async (e) => {
@@ -589,16 +591,19 @@ streamContainer.addEventListener('mouseup', async (e) => {
         const distX = Math.abs(endCoords.x - mouseDownCoords.x);
         const distY = Math.abs(endCoords.y - mouseDownCoords.y);
 
-        // 轨迹点足够且位移足够 → 曲线滑动；否则回退到 tap/longpress/短滑动
-        if (swipePath.length >= 2 && (distX >= 15 || distY >= 15)) {
-            // 确保终点纳入轨迹（mouseup 的最后一次采样可能被最小距离过滤掉）
+        if (distX < 15 && distY < 15) {
+            // 无位移 → tap / longpress
+            sendInputAction(endCoords, duration, distX, distY);
+        } else {
+            // 有位移：统一走带时间戳的轨迹回放——快速拖动/长按拖动都按真实耗时逐段回放
+            // 确保终点纳入轨迹（最后一次采样可能被最小距离过滤掉），并补上真实时间戳
             const last = swipePath[swipePath.length - 1];
             if (last.x !== endCoords.x || last.y !== endCoords.y) {
-                swipePath.push({ x: endCoords.x, y: endCoords.y });
+                swipePath.push({ x: endCoords.x, y: endCoords.y, t: duration });
+            } else {
+                last.t = duration;
             }
             sendSwipePath(swipePath);
-        } else {
-            sendInputAction(endCoords, duration, distX, distY);
         }
     }
 });
@@ -629,9 +634,9 @@ streamContainer.addEventListener('touchstart', (e) => {
         overlay.style.height = '0px';
         overlay.style.display = 'block';
     } else {
-        // 非截图模式：开始采集手绘滑动轨迹
+        // 非截图模式：开始采集手绘滑动轨迹（起点先入数组，t=0 相对按下时刻）
         isSwiping = true;
-        swipePath = [{ x: mouseDownCoords.x, y: mouseDownCoords.y }];
+        swipePath = [{ x: mouseDownCoords.x, y: mouseDownCoords.y, t: 0 }];
     }
 }, { passive: false });
 
@@ -666,7 +671,8 @@ streamContainer.addEventListener('touchmove', (e) => {
     const dx = c.x - last.x;
     const dy = c.y - last.y;
     if (dx * dx + dy * dy < SWIPE_MIN_POINT_DIST * SWIPE_MIN_POINT_DIST) return;
-    swipePath.push({ x: c.x, y: c.y });
+    // 记录相对按下时刻的时间戳，后端按真实耗时逐段回放（长按拖动=按住期间无点，回放时自然停留）
+    swipePath.push({ x: c.x, y: c.y, t: Date.now() - mouseDownTime });
 }, { passive: false });
 
 streamContainer.addEventListener('touchend', async (e) => {
@@ -696,15 +702,18 @@ streamContainer.addEventListener('touchend', async (e) => {
         const distX = Math.abs(endCoords.x - mouseDownCoords.x);
         const distY = Math.abs(endCoords.y - mouseDownCoords.y);
 
-        // 轨迹点足够且位移足够 → 曲线滑动；否则回退到 tap/longpress/短滑动
-        if (swipePath.length >= 2 && (distX >= 15 || distY >= 15)) {
+        if (distX < 15 && distY < 15) {
+            // 无位移 → tap / longpress
+            sendInputAction(endCoords, duration, distX, distY);
+        } else {
+            // 有位移：统一走带时间戳的轨迹回放——快速拖动/长按拖动都按真实耗时逐段回放
             const last = swipePath[swipePath.length - 1];
             if (last.x !== endCoords.x || last.y !== endCoords.y) {
-                swipePath.push({ x: endCoords.x, y: endCoords.y });
+                swipePath.push({ x: endCoords.x, y: endCoords.y, t: duration });
+            } else {
+                last.t = duration;
             }
             sendSwipePath(swipePath);
-        } else {
-            sendInputAction(endCoords, duration, distX, distY);
         }
     }
 }, { passive: false });
@@ -712,7 +721,7 @@ streamContainer.addEventListener('touchend', async (e) => {
 /** 将手绘轨迹点发送到后端 /api/input（action=swipe_path）执行曲线滑动 */
 function sendSwipePath(path) {
     if (!path || path.length < 2) return;
-    const points = path.map(p => [p.x, p.y]);
+    const points = path.map(p => [p.x, p.y, p.t ?? 0]);
     const formData = new FormData();
     formData.append('device_name', deviceName);
     formData.append('action', 'swipe_path');
@@ -726,7 +735,7 @@ function sendInputAction(endCoords, duration, distX, distY) {
     formData.append('device_name', deviceName);
 
     if (distX < 15 && distY < 15) {
-        if (duration >= 500) {
+        if (duration >= LONG_PRESS_MS) {
             formData.append('action', 'longpress');
             formData.append('x1', mouseDownCoords.x);
             formData.append('y1', mouseDownCoords.y);
@@ -742,7 +751,7 @@ function sendInputAction(endCoords, duration, distX, distY) {
         formData.append('y1', mouseDownCoords.y);
         formData.append('x2', endCoords.x);
         formData.append('y2', endCoords.y);
-        formData.append('duration', Math.min(duration, 500));
+        // 前端有位移的拖动统一走 swipe_path（带时间戳回放），此分支仅作兜底，不携带 hold
     }
     fetch('/api/input', { method: 'POST', body: formData });
 }

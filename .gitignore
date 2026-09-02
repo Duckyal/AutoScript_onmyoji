@@ -3,13 +3,8 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
 .venv/
-venv/
-env/
-.env
-*.egg-info/
-*.egg
-.DS_Store
 .vscode/
+termux-app/
+
 email-api

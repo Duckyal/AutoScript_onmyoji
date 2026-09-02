@@ -266,14 +266,15 @@ class ADB():
         '''
         self.点击(x, y, loc, *els)
 
-    def swipe(self, start_x:int, start_y:int, end_x:int, end_y:int, count:int=30, delay:float=0.01):
+    def swipe(self, start_x:int, start_y:int, end_x:int, end_y:int, count:int=30, delay:float=0.01, hold:float=0):
         '''
         start_x, start_y: 起始点坐标
         end_x, end_y: 结束点坐标
         count: 滑动次数，默认为 30
         delay: 每次滑动间隔，默认为 0.01
+        hold: 滑动后保持时间，默认为 0
         '''
-        self.滑动(start_x, start_y, end_x, end_y, count, delay)
+        self.滑动(start_x, start_y, end_x, end_y, count, delay, hold)
 
     def long_press(self, x:int, y:int, duration:float=1.5, jitter:float=0.1):
         '''
@@ -282,17 +283,6 @@ class ADB():
         jitter: 随机时间前后偏移值，默认 0.1
         '''
         self.长按(x, y, duration, jitter)
-
-    def multi_point_slide(self, points, delay: float = 0.0):
-        '''
-        Slide along a user-drawn trajectory point sequence (for the dev page freehand curve).
-        :param points: list of trajectory points, e.g. [[x1, y1], [x2, y2], ...], at least 2 points
-        :param delay: fixed interval between moves (seconds). Default 0 = no wait,
-                      playback speed is only limited by the HTTP round-trip of touch.move (most responsive);
-                      set to 0.002~0.005 if points are dropped or jittery
-        :return: number of points actually played back
-        '''
-        return self.多点位滑动(points, delay)
 
     def input_text(self, txt:str):
         '''
@@ -478,16 +468,20 @@ class ADB():
         self.log(f'模拟长按({x}, {y})', 'debug')
         self.重置定时器()
 
-    def 滑动(self, start_x:int, start_y:int, end_x:int, end_y:int, count:int=30, delay:float=0.01):
+    def 滑动(self, start_x:int, start_y:int, end_x:int, end_y:int, count:int=30, delay:float=0.01, hold:float=0.0):
         '''
         start_x, start_y 为起始坐标,
         end_x, end_y 为终点坐标,
         count 决定了轨迹的细腻程度（点越多越慢越丝滑）
         delay 决定了每次移动的间隔时间（单位：秒，值越大越慢）
+        hold: 按下后先停留的时长（单位：秒），用于长按拖动（按住不松再移动），默认 0
         '''
         points = self.bz.trackArray((start_x, start_y), (end_x, end_y), count)['trackArray']
         # 首先：手指按下
         self.d.touch.down(start_x, start_y)
+        # 长按拖动：按下后先停留 hold 秒再移动，模拟"按住不松手"再拖动
+        if hold > 0:
+            time.sleep(hold)
         # 其次：遍历轨迹点进行移动
         for x, y in points:
             self.d.touch.move(x, y)
@@ -497,48 +491,34 @@ class ADB():
         self.log('模拟滑动{0} {1} -> {2} {3}'.format(start_x, start_y, end_x, end_y), 'debug')
         self.重置定时器()
 
-    def 多点位滑动(self, points, delay: float = 0.0):
+    def 滑动轨迹(self, points):
         '''
-        按用户绘制的轨迹点序列执行曲线滑动（用于开发页面手绘曲线）。
-        :param points: 轨迹点列表，形如 [[x1, y1], [x2, y2], ...]，至少 2 个点
-        :param delay: 相邻两点之间的间隔时间（秒）。默认 0 走最快路径（设备本地按 5ms/step 节流）。
-                      预估总时长 ≈ (点数 - 1) × max(0.01, delay)
-        :return: 实际回放的点数
-
-        实现说明：
-        主路径走 u2.swipe_points —— 一次 HTTP 把所有点数组发给 atx-agent，由设备本地的
-        Android UiDevice.swipe(Point[], steps) 按 5ms/step 节流回放完整轨迹。
-        相比旧的 touch.down/move/up 逐点注入（每个 move 一次 HTTP JSONRPC 往返，n 个点要 n 次往返），
-        批量调用快约 3-5 倍，且无网络抖动。
-        若 swipe_points 在某些设备/定制 ROM 上失败，自动回退到逐点 touch 注入。
+        按带时间戳的轨迹点如实回放滑动（用于开发页面回放用户手势，快速滑动/长按拖动统一走这里）。
+        :param points: 轨迹点列表，形如 [[x1, y1, t1], [x2, y2, t2], ...]，
+                       t 为相对起点的毫秒时间戳（可选；缺失时按每点 20ms 均匀回放，兼容旧调用）
+        :return: 回放点数
+        实现：touch.down 起点 → 逐点 sleep(Δt) + move → touch.up 终点，
+        时间节奏与前端采集完全一致——按住停留多久，设备端就停留多久。
         '''
         if not points or len(points) < 2:
-            self.log('曲线滑动：轨迹点不足，至少需要 2 个点', 'warning')
+            self.log('轨迹回放：轨迹点不足，至少需要 2 个点', 'warning')
             return 0
-
         n = len(points)
-        pts = [(int(p[0]), int(p[1])) for p in points]
-        start_x, start_y = pts[0]
-        end_x, end_y = pts[-1]
-
-        # delay 即 per-segment duration（相邻两点之间的时长）；
-        # swipe_points 内部 steps = duration/0.005，swipe_points 无 max(2,steps) 兜底，
-        # 故 clamp 到 0.01 保证 steps>=2，否则 steps=0 会空操作
-        seg_duration = max(0.01, delay)
-        try:
-            self.d.swipe_points(pts, seg_duration)
-            self.log(f'多点位曲线滑动(swipe_points): {n} 个点, ({start_x},{start_y}) -> ({end_x},{end_y}), 预估≈{(n-1)*seg_duration:.3f}s', 'debug')
-        except Exception as e:
-            # fallback：老设备/定制 ROM 上 swipe_points 可能失败，退回逐点 touch 注入（每个 move 一次 HTTP 往返）
-            self.log(f'swipe_points 失败，回退逐点 touch 注入: {e}', 'warning')
-            self.d.touch.down(start_x, start_y)
-            for x, y in pts[1:-1]:
+        prev_t = 0.0
+        for i, p in enumerate(points):
+            x, y = int(round(float(p[0]))), int(round(float(p[1])))
+            t = float(p[2]) if len(p) >= 3 and p[2] is not None else i * 20.0
+            if i == 0:
+                self.d.touch.down(x, y)
+            else:
+                dt = (t - prev_t) / 1000
+                if dt > 0:
+                    time.sleep(dt)
                 self.d.touch.move(x, y)
-                if delay > 0:
-                    time.sleep(delay)
-            self.d.touch.up(end_x, end_y)
-            self.log(f'多点位曲线滑动(逐点 fallback): {n} 个点, ({start_x},{start_y}) -> ({end_x},{end_y})', 'debug')
-
+            prev_t = t
+        end_x, end_y = int(round(float(points[-1][0]))), int(round(float(points[-1][1])))
+        self.d.touch.up(end_x, end_y)
+        self.log(f'轨迹回放: {n} 个点, 总时长≈{prev_t/1000:.3f}s, ({int(points[0][0])},{int(points[0][1])}) -> ({end_x},{end_y})', 'debug')
         self.重置定时器()
         return n
 
@@ -1308,7 +1288,7 @@ class ADB():
         x1, y1, x2, y2: 截图区域坐标，默认为 -1 表示全屏
         Specified_image: 指定图片（如果不提供则使用当前截图）
         target_txt: 目标文本（如果不提供则返回所有文本框信息），支持正则表达式，返回值为匹配到的文本对应坐标或None
-        use_regex: 是否启用正则匹配，默认为 False,为True则返回值将为匹配到的文本列表，为False则返回匹配到的文本及其坐标
+        use_regex: 是否启用正则匹配，默认为 False
         '''
         check_timeout(self.device_id)
         
@@ -1361,11 +1341,11 @@ class ADB():
             else:
                 # 启用正则匹配
                 if use_regex:
-                    matched_results = []
+                    matched_results = {}
                     pattern = re.compile(target_txt)
                     for word in result_dict.keys():
                         if pattern.search(word):
-                            matched_results.append(word)
+                            matched_results[word] = result_dict[word]
                     if matched_results:
                         self.log('找字：'+str(matched_results), 'debug')
                     return matched_results

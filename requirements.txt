@@ -4,7 +4,7 @@ uvicorn[standard]
 jinja2 >= 3.0.0
 requests
 uiautomator2
-opencv-python
+opencv-python-headless
 numpy
 rapidocr
 onnxruntime

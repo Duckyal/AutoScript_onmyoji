@@ -123,7 +123,8 @@ async def handle_input(
             # 前端 duration 为毫秒，长按方法接收秒
             await asyncio.to_thread(device.长按, x1, y1, duration / 1000.0)
         elif action == "swipe":
-            await asyncio.to_thread(device.滑动, x1, y1, x2, y2)
+            # duration(毫秒) 转秒作为 hold：按下后先停留再滑动（支持前端"长按拖动"，按住不松）
+            await asyncio.to_thread(device.滑动, x1, y1, x2, y2, hold=duration / 2000.0)
         elif action == "swipe_path":
             try:
                 pts = json.loads(points) if points else []
@@ -133,10 +134,12 @@ async def handle_input(
             for p in pts:
                 if not (isinstance(p, (list, tuple)) and len(p) >= 2):
                     continue
-                clean_pts.append([int(round(float(p[0]))), int(round(float(p[1])))])
+                # 兼容 [x, y] 和 [x, y, t]（t 为相对起点毫秒时间戳，缺失时后端均匀回放）
+                clean_pts.append([int(round(float(p[0]))), int(round(float(p[1]))),
+                                  float(p[2]) if len(p) >= 3 else None])
             if len(clean_pts) < 2:
                 return JSONResponse(status_code=400, content={"success": False, "message": "有效轨迹点不足"})
-            await asyncio.to_thread(device.多点位滑动, clean_pts, delay)
+            await asyncio.to_thread(device.滑动轨迹, clean_pts)
         else:
             return JSONResponse(status_code=400, content={"success": False, "message": f"未知 action: {action}"})
         return {"success": True, "message": "操作已发送"}
