@@ -19,6 +19,9 @@ const FloatApp = {
   runningTaskName: '',
   busy: false,              // 启动/停止请求中
   pollTimer: null,
+  // 悬浮窗小窗(UA 带 AutoScriptFloat)= env-float：日志只显示最新一行；
+  // App「打开网页」全屏 / 浏览器 = env-full：日志多行铺满剩余高度
+  isFloatEnv: /AutoScriptFloat/i.test(navigator.userAgent),
 
   els: {},
   ws: null,
@@ -102,6 +105,7 @@ const FloatApp = {
       actionBtn: document.getElementById('actionBtn'),
       actionLabel: document.getElementById('actionLabel'),
       actionIcon: document.getElementById('actionIcon'),
+      floatMinBtn: document.getElementById('floatMinBtn'),
       stateDot: document.getElementById('stateDot'),
       stateText: document.getElementById('stateText'),
       runningTask: document.getElementById('runningTask'),
@@ -111,6 +115,13 @@ const FloatApp = {
 
     this.els.deviceRefreshBtn.addEventListener('click', () => this.refreshDevices());
     this.els.actionBtn.addEventListener('click', () => this.onActionClick());
+
+    // 「收起」按钮：仅悬浮窗小窗显示（CSS 也按环境隐藏，双保险）。
+    // 无 JS 桥（理论上不会出现）时点击仅提示，不报错
+    if (this.els.floatMinBtn && this.isFloatEnv) {
+      this.els.floatMinBtn.hidden = false;
+      this.els.floatMinBtn.addEventListener('click', () => this.collapseFloat());
+    }
 
     this.connectWS();
     this.loadDevices();
@@ -181,6 +192,8 @@ const FloatApp = {
   async onDeviceChange() {
     this.device = this.els.deviceSel.value || '';
     try { localStorage.setItem('onmyoji:float:device', this.device); } catch (e) {}
+    // 完整页多行日志：切换设备时清掉上一台的日志，避免串台
+    if (!this.isFloatEnv && this.els.lastLog) this.els.lastLog.innerHTML = '';
 
     // 记忆当前任务（按设备）
     this.activeTask = '';
@@ -570,13 +583,21 @@ const FloatApp = {
         try {
           const data = JSON.parse(ev.data);
           if (data.type === 'history' && Array.isArray(data.logs)) {
-            // 只看最近一条
-            for (let i = data.logs.length - 1; i >= 0; i--) {
-              const l = data.logs[i];
-              if (!l.source || l.source === this.device) { this.renderLog(l, true); break; }
+            if (this.isFloatEnv) {
+              // 悬浮窗：只看最近一条
+              for (let i = data.logs.length - 1; i >= 0; i--) {
+                const l = data.logs[i];
+                if (!l.source || l.source === this.device) { this.renderLog(l, true); break; }
+              }
+            } else {
+              // 完整页：铺出该设备的历史日志，便于回看上下文
+              this.els.lastLog.innerHTML = '';
+              data.logs.forEach((l) => {
+                if (!l.source || l.source === this.device) this.renderLog(l, false);
+              });
             }
           } else if (data.message !== undefined) {
-            if (!data.source || data.source === this.device) this.renderLog(data, false);
+            if (!data.source || data.source === this.device) this.renderLog(data, this.isFloatEnv);
           }
         } catch (e) {}
       };
@@ -591,24 +612,46 @@ const FloatApp = {
     }
   },
 
-  /** 渲染一条日志到"最近日志"单行（只保留最新一条，保持小窗清爽） */
-  renderLog(data) {
+  /**
+   * 渲染一条日志。
+   *  replace=true（悬浮窗）：只保留最新一条，保持小窗清爽；
+   *  replace=false（完整页）：追加一行并自动滚到底部看最新。
+   */
+  renderLog(data, replace = false) {
     const el = this.els.lastLog;
-    el.innerHTML = '';
-
-    const spanTime = document.createElement('span');
-    spanTime.className = 'log-time';
     const d = new Date();
     const pad = n => String(n).padStart(2, '0');
-    spanTime.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-
-    const spanMsg = document.createElement('span');
+    const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     const level = data.level || 'info';
-    spanMsg.className = 'log-' + (['success', 'warning', 'error', 'info'].includes(level) ? level : 'info');
-    spanMsg.textContent = data.message;
+    const cls = 'log-' + (['success', 'warning', 'error', 'info'].includes(level) ? level : 'info');
 
-    el.appendChild(spanTime);
-    el.appendChild(spanMsg);
+    const makeSpan = (tag, text) => {
+      const s = document.createElement(tag);
+      s.className = cls;
+      s.textContent = text;
+      return s;
+    };
+
+    if (replace) {
+      el.innerHTML = '';
+      const t = document.createElement('span');
+      t.className = 'log-time';
+      t.textContent = time;
+      el.appendChild(t);
+      el.appendChild(makeSpan('span', data.message));
+      return;
+    }
+
+    // 多行流式：time + message 成行追加
+    const row = document.createElement('div');
+    row.className = 'log-row';
+    const t = document.createElement('span');
+    t.className = 'log-time';
+    t.textContent = time;
+    row.appendChild(t);
+    row.appendChild(makeSpan('span', data.message));
+    el.appendChild(row);
+    el.scrollTop = el.scrollHeight;   // 始终展示最新一行
   },
 
   pushLocalLog(msg, level) {
@@ -616,6 +659,18 @@ const FloatApp = {
   },
 
   /* ==================== 其它 ==================== */
+
+  /** 收起悬浮窗小窗：调 Android 侧 AutoScriptBridge 桥把窗口收起、悬浮球回贴边。
+   *  完整页 / 浏览器没有悬浮球可收，仅提示。 */
+  collapseFloat() {
+    const bridge = window.AutoScriptBridge;
+    if (bridge && typeof bridge.collapse === 'function') {
+      bridge.collapse();
+      return;
+    }
+    this.toastMsg('当前页面没有可收起的悬浮窗', true);
+  },
+
   toastMsg(msg, err = false) {
     const t = this.els.toast;
     t.textContent = msg;

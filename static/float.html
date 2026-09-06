@@ -4,6 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>AutoScript - 悬浮遥控</title>
+  <script>
+    // 运行环境识别：悬浮窗 WebView(FloatingWindowService) 在 UA 里带 AutoScriptFloat 后缀，
+    // 其余（App「打开网页」全屏 WebView / 浏览器）视为完整页。日志区据此布局：
+    //  - env-float：只显示最新一行，保持小窗紧凑
+    //  - env-full ：日志多行铺满剩余高度，滚动浏览
+    document.documentElement.classList.add(
+      /AutoScriptFloat/i.test(navigator.userAgent) ? 'env-float' : 'env-full'
+    );
+  </script>
   <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
   <link rel="stylesheet" href="/static/css/float.css?v={{ time_now }}">
 </head>
@@ -15,12 +24,19 @@
 
   <div class="float-app">
 
-    <!-- 顶栏：左侧项目名 · 右侧开始/终止按钮 -->
+    <!-- 顶栏：左侧项目名 · 右侧 收起按钮(仅悬浮窗) + 开始/终止按钮 -->
     <header class="float-header">
       <div class="float-brand">
         <img class="float-brand__logo" src="/static/favicon.ico" alt="">
         AutoScript
       </div>
+      <!-- 收起悬浮窗：仅悬浮窗小窗显示（env-float + CSS 双保险），
+           点击经 AutoScriptBridge JS 桥收起小窗回到悬浮球；完整页/浏览器隐藏 -->
+      <button class="float-min" id="floatMinBtn" title="收起悬浮窗" aria-label="收起悬浮窗" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </button>
       <button class="action" id="actionBtn" disabled>
         <span class="action__icon" id="actionIcon">
           <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"></polygon></svg>
@@ -44,6 +60,15 @@
       <div class="dev-hint" id="devHint" hidden></div>
     </section>
 
+    <!-- 任务选择 -->
+    <nav class="chips" id="chipRow"></nav>
+
+    <!-- 参数 -->
+    <section class="pane pane--cfg">
+      <div id="cfgBody"></div>
+      <div class="cfg-hint" id="customHint" hidden></div>
+    </section>
+
     <!-- 运行状态 + 最近日志 -->
     <section class="pane pane--status">
       <div class="statusline">
@@ -53,15 +78,6 @@
         <span class="statusline__task" id="runningTask" hidden></span>
       </div>
       <div class="lastlog" id="lastLog">设备运行日志将在这里滚动显示</div>
-    </section>
-
-    <!-- 任务选择 -->
-    <nav class="chips" id="chipRow"></nav>
-
-    <!-- 参数 -->
-    <section class="pane pane--cfg">
-      <div id="cfgBody"></div>
-      <div class="cfg-hint" id="customHint" hidden></div>
     </section>
 
   </div>

@@ -117,6 +117,32 @@ html, body {
   background: linear-gradient(135deg, #f87171, #dc2626);
   box-shadow: 0 4px 14px rgba(220, 38, 38, .35);
 }
+
+/* ============ 顶栏「收起」圆钮（仅悬浮窗小窗显示） ============ */
+.float-min {
+  appearance: none;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.float-min svg { width: 16px; height: 16px; }
+.float-min:hover { background: var(--bg-card-solid); color: var(--text); }
+.float-min:active { transform: scale(.93); }
+/* 悬浮窗小窗：圆钮与开始按钮一组贴右，圆钮在开始按钮左侧；
+   完整页/浏览器里没有悬浮球可收，隐藏该钮 */
+html.env-float .float-min { margin-left: auto; }
+html.env-full .float-min { display: none; }
+
 .pane {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -371,4 +397,69 @@ html, body {
 @media (max-width: 360px) {
   .f-label { width: 72px; }
   .float-app { padding-left: 8px; padding-right: 8px; }
+}
+
+/* ==========================================================================
+ * 运行环境差异（<html> 的 class 由 float.html 内联脚本按 UA 判定）：
+ *   env-float —— 悬浮窗小窗(UA 带 AutoScriptFloat)：紧凑，日志区只露最新一行
+ *   env-full  —— App「打开网页」全屏 / 浏览器：日志多行铺满剩余高度
+ * ========================================================================== */
+
+/* ---------- 悬浮窗小窗：日志锁为单行高度，超长不把面板撑高 ---------- */
+html.env-float .pane--status {
+  flex: none;
+}
+html.env-float .lastlog {
+  max-height: 34px;               /* 一行内容(含 padding/border)高度上限 */
+  overflow: hidden;
+  align-items: center;
+}
+
+/* ---------- 完整页：整页不滚，日志区沉底并吃掉剩余高度 ---------- */
+html.env-full,
+html.env-full body {
+  height: 100%;
+}
+html.env-full body {
+  overflow: hidden;
+}
+html.env-full .float-app {
+  height: 100%;
+  max-width: 640px;               /* 日志区更大，适当放宽内容宽度 */
+  overflow-y: auto;               /* 参数表单过高时整页兜底滚动 */
+}
+/* 固定区：顶栏/设备/任务/参数不参与伸缩，保持自然高度 */
+html.env-full .float-header,
+html.env-full .pane--dev,
+html.env-full .chips,
+html.env-full .pane--cfg {
+  flex: none;
+}
+/* 状态+日志面板排到最后(order 9)，成为占满剩余空间的弹性日志区 */
+html.env-full .pane--status {
+  order: 9;
+  flex: 1 1 auto;
+  min-height: 130px;
+  display: flex;
+  flex-direction: column;
+}
+html.env-full .pane--status .statusline {
+  flex: none;
+}
+html.env-full .lastlog {
+  display: block;                 /* 多行流式 */
+  margin-top: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;               /* 历史日志区内滚动 */
+  align-items: normal;
+}
+html.env-full .lastlog .log-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 2px 0;
+  word-break: break-all;
+}
+html.env-full .lastlog .log-row + .log-row {
+  border-top: 1px dashed rgba(52, 56, 86, .35);
 }

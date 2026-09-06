@@ -9,6 +9,16 @@
 </head>
 <body>
   <div class="launcher-card">
+    <!-- 右上角：切换到悬浮遥控(简易控制界面)，已选设备会随链接带过去 -->
+    <a class="launcher-switch" id="floatBtn" href="/float" title="切换到悬浮遥控（简易控制）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 3 4 7l4 4"></path>
+        <path d="M4 7h16"></path>
+        <path d="m16 21 4-4-4-4"></path>
+        <path d="M20 17H4"></path>
+      </svg>
+    </a>
+
     <div class="launcher-title">
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
@@ -44,7 +54,7 @@
         开发页
       </a>
     </div>
-        
+
     <br>
     <button class="refresh-btn" id="refreshBtn">刷新设备列表</button>
   </div>

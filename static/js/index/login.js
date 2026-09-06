@@ -2,8 +2,6 @@ const deviceInput = document.getElementById('deviceInput');
 const datalist = document.getElementById('adbDevices');
 const refreshBtn = document.getElementById('refreshBtn');
 const statusText = document.getElementById('statusText');
-const loginBtn = document.getElementById('loginBtn');
-const devBtn = document.getElementById('devBtn');
 
 // 当输入框被点击时，强制显示所有设备选项
 deviceInput.addEventListener('click', function () {
@@ -67,60 +65,46 @@ window.addEventListener('DOMContentLoaded', fetchDevices);
 // 绑定刷新按钮
 refreshBtn.addEventListener('click', fetchDevices);
 
-// 绑定设备页按钮
-loginBtn.addEventListener('click', async function() {
+// 解析用户选中的设备：输入框有值用输入值；为空时，单设备自动取用、无设备/多设备则提示
+function resolveDevice() {
   let deviceName = deviceInput.value.trim();
-  // 如果输入框为空
-  if (!deviceName) {
-    const availableDevices = datalist.options;
-    
-    if (availableDevices.length === 1) {
+  if (deviceName) return deviceName;
+
+  const availableDevices = datalist.options;
+  if (availableDevices.length === 1) {
     // 列表只有 1 个设备，自动使用它
-        deviceName = availableDevices[0].value;
-    } else if (availableDevices.length === 0) {
-        // 没有设备
-        statusText.style.color = '#f38ba8';
-        statusText.textContent = '未检测到设备，请先连接设备或手动输入';
-        return;
-    } else {
-        // 有多个设备，必须手动选择
-        statusText.style.color = '#f38ba8';
-        statusText.textContent = '检测到多个设备，请在下拉列表中选择一个';
-        return;
-    }
+    return availableDevices[0].value;
   }
-
-  // 跳转到设备管理页（/home）
-  setTimeout(() => {
-    window.location.href = '/home?device=' + encodeURIComponent(deviceName);
-  }, 100);
-});
-
-// 绑定开发页按钮
-devBtn.addEventListener('click', async function() {
-  let deviceName = deviceInput.value.trim();
-  // 如果输入框为空
-  if (!deviceName) {
-    const availableDevices = datalist.options;
-    
-    if (availableDevices.length === 1) {
-    // 列表只有 1 个设备，自动使用它
-        deviceName = availableDevices[0].value;
-    } else if (availableDevices.length === 0) {
-        // 没有设备
-        statusText.style.color = '#f38ba8';
-        statusText.textContent = '未检测到设备，请先连接设备或手动输入';
-        return;
-    } else {
-        // 有多个设备，必须手动选择
-        statusText.style.color = '#f38ba8';
-        statusText.textContent = '检测到多个设备，请在下拉列表中选择一个';
-        return;
-    }
+  if (availableDevices.length === 0) {
+    statusText.style.color = '#f38ba8';
+    statusText.textContent = '未检测到设备，请先连接设备或手动输入';
+    return null;
   }
+  statusText.style.color = '#f38ba8';
+  statusText.textContent = '检测到多个设备，请在下拉列表中选择一个';
+  return null;
+}
 
-  // 跳转到设备开发页（/dev）
+// 通用入口绑定：校验设备后跳转到目标页面
+function bindEntry(btnId, path) {
+  document.getElementById(btnId).addEventListener('click', function() {
+    const deviceName = resolveDevice();
+    if (!deviceName) return;
+    // 跳转到对应页面（/home 完整控制台 /dev 开发页 /float 悬浮遥控·简易控制）
+    setTimeout(() => {
+      window.location.href = path + '?device=' + encodeURIComponent(deviceName);
+    }, 100);
+  });
+}
+
+bindEntry('loginBtn', '/home');   // 设备页（完整控制台）
+bindEntry('devBtn', '/dev');      // 开发页
+
+// 右上角切换图标 → 悬浮遥控(简易控制)：不强求先选设备，已在输入框填过就带上
+document.getElementById('floatBtn').addEventListener('click', function (e) {
+  e.preventDefault();
+  const deviceName = deviceInput.value.trim();
   setTimeout(() => {
-    window.location.href = '/dev?device=' + encodeURIComponent(deviceName);
+    window.location.href = '/float' + (deviceName ? '?device=' + encodeURIComponent(deviceName) : '');
   }, 100);
 });
