@@ -33,6 +33,17 @@ const App = {
 
     taskList.innerHTML = ''; // 清空现有静态内容
 
+    // 恢复上次浏览的任务面板：dev/home 页切换回来时保持所在任务页
+    // （同自定义任务页，用 localStorage 记忆）
+    let defaultIndex = 0;
+    if (typeof TaskManager !== 'undefined' && TaskManager.getLastTask) {
+      const lastTask = TaskManager.getLastTask();
+      if (lastTask) {
+        const idx = Array.prototype.findIndex.call(panels, p => p.id === `panel-${lastTask}`);
+        if (idx >= 0) defaultIndex = idx;
+      }
+    }
+
     panels.forEach((panel, index) => {
       // 解析 ID: panel-yuhun -> yuhun
       const taskId = panel.id.replace('panel-', '');
@@ -46,8 +57,8 @@ const App = {
       li.dataset.name = taskName;
       li.textContent = taskName;
 
-      // 默认激活第一个，并显示第一个面板
-      if (index === 0) {
+      // 默认激活上次浏览的任务面板；无记录时激活第一个
+      if (index === defaultIndex) {
         li.classList.add('active');
         panel.style.display = 'block';
         // 把任务名初始化到标题栏

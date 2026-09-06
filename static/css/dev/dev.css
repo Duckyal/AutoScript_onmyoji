@@ -223,3 +223,59 @@ body {
     height: 100%;
   }
 }
+
+/* ==================== 窄竖屏适配（手机竖屏 / 悬浮小窗） ====================
+   悬浮窗等窄容器下把「视频流 + 侧栏」改为上下堆叠：
+   视频流在上（占约 42%），工具栏在下可滚动，不再左右挤压。 */
+@media screen and (orientation: portrait) and (max-width: 560px) {
+  .header {
+    height: 44px;
+    padding: 0 10px;
+  }
+  .header h1 {
+    font-size: 12px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .toggle-sidebar-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .main-container {
+    flex-direction: column;
+  }
+  .stream-section {
+    width: 100%;
+    height: 42%;
+    min-height: 110px;
+    flex: 0 0 auto;
+  }
+  .sidebar {
+    width: 100%;
+    height: auto;
+    flex: 1;
+    padding: 12px;
+    border-left: none;
+    border-top: 1px solid #e5e7eb;
+  }
+  /* 小屏隐藏工具栏改为直接收起（不再横向位移） */
+  .sidebar.hidden {
+    width: 100%;
+    transform: none;
+    padding: 0;
+    border-top: none;
+    max-height: 0;
+    min-height: 0;
+    flex: 0;
+    overflow: hidden;
+  }
+  .tool-card {
+    padding: 12px;
+  }
+  /* 区域坐标四列在小屏过挤，改为两列 */
+  .sidebar div[style*="grid-template-columns: repeat(4, 1fr)"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}

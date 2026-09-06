@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>AutoScript - 悬浮遥控</title>
+  <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="/static/css/float.css?v={{ time_now }}">
+</head>
+<body>
+  <!-- 供 JS 读取的服务端注入值（当前设备，可选，供悬浮窗 URL 直接指定） -->
+  <script>
+    window.PAGE_DEVICE = {{ device|tojson }};
+  </script>
+
+  <div class="float-app">
+
+    <!-- 顶栏：左侧项目名 · 右侧开始/终止按钮 -->
+    <header class="float-header">
+      <div class="float-brand">
+        <img class="float-brand__logo" src="/static/favicon.ico" alt="">
+        AutoScript
+      </div>
+      <button class="action" id="actionBtn" disabled>
+        <span class="action__icon" id="actionIcon">
+          <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"></polygon></svg>
+        </span>
+        <span id="actionLabel">请选择设备</span>
+      </button>
+    </header>
+
+    <!-- 设备 -->
+    <section class="pane pane--dev">
+      <label class="pane__label" for="deviceSel">被控设备</label>
+      <div class="pane__row">
+        <select class="ctl ctl--select ctl--device" id="deviceSel"></select>
+        <button class="btn-refresh" id="deviceRefreshBtn" title="刷新设备列表">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="dev-hint" id="devHint" hidden></div>
+    </section>
+
+    <!-- 运行状态 + 最近日志 -->
+    <section class="pane pane--status">
+      <div class="statusline">
+        <span class="statusline__dot" id="stateDot"></span>
+        <span class="statusline__text" id="stateText">未选择设备</span>
+        <span class="statusline__spacer"></span>
+        <span class="statusline__task" id="runningTask" hidden></span>
+      </div>
+      <div class="lastlog" id="lastLog">设备运行日志将在这里滚动显示</div>
+    </section>
+
+    <!-- 任务选择 -->
+    <nav class="chips" id="chipRow"></nav>
+
+    <!-- 参数 -->
+    <section class="pane pane--cfg">
+      <div id="cfgBody"></div>
+      <div class="cfg-hint" id="customHint" hidden></div>
+    </section>
+
+  </div>
+
+  <!-- 轻提示 -->
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="/static/js/float.js?v={{ time_now }}"></script>
+</body>
+</html>

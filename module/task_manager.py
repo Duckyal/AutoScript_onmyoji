@@ -6,6 +6,22 @@ from module.decorators import trigger_stop_signal
 active_tasks = {}
 # 存储结构: { "device_serial": "task_name" }
 active_names = {}
+# 最近一次成功启动的任务参数记录: { "device_serial": { "task_name": config } }
+# 悬浮窗遥控页用：默认按上次参数回填、支持一键重跑
+recent_configs = {}
+
+
+def save_recent_config(device_id: str, task_name: str, config: dict):
+    """记录某设备最近一次成功启动某任务的参数"""
+    try:
+        recent_configs.setdefault(device_id, {})[task_name] = dict(config)
+    except Exception:
+        pass
+
+
+def get_recent_configs(device_id: str) -> dict:
+    """获取某设备各任务最近一次的启动参数 { task_name: config }"""
+    return dict(recent_configs.get(device_id, {}))
 
 def register_task(device_id: str, task: asyncio.Task, task_name: str):
     """注册任务"""

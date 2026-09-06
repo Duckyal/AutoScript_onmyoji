@@ -20,9 +20,18 @@ html, body {
   padding: 40px;
   border-radius: 12px;
   box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-  width: 360px;
+  width: 100%;
+  max-width: 360px;
+  box-sizing: border-box;
   text-align: center;
   position: relative;
+}
+
+/* 窄窗口（悬浮小窗）时收窄内边距，避免内容超出 */
+@media (max-width: 400px) {
+  .launcher-card {
+    padding: 24px 20px;
+  }
 }
 .launcher-title {
   margin-bottom: 30px;

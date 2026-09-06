@@ -1,0 +1,635 @@
+/**
+ * static/js/float.js —— 悬浮窗遥控页逻辑（/float）
+ *
+ * 职责：小窗里快速「选设备 → 选任务(可改常用参数) → 运行/终止」
+ * - 设备：/api/get_devices 动态拉取，localStorage 记忆上次所选
+ * - 参数默认值：优先回填该设备最近一次启动该任务时的配置(/api/task_last_configs)，
+ *   没有则用内置默认；也可以直接手改
+ * - 运行中：轮询 /api/task_status，大按钮切换为「终止」；WebSocket 订阅最近 1~2 行日志
+ */
+const FloatApp = {
+  PAGE_DEVICE: (window.PAGE_DEVICE || '').trim(),
+  device: '',
+  devices: [],
+  lastConfigs: {},          // 当前设备: { task_name: config }
+  tasks: [],                // 当前展示的任务 id 列表
+  activeTask: '',
+
+  running: false,
+  runningTaskName: '',
+  busy: false,              // 启动/停止请求中
+  pollTimer: null,
+
+  els: {},
+  ws: null,
+
+  /* 内置任务 schema：字段与 /home 各配置面板一一对应（名称/默认值一致）。
+   * kind: select | number | text
+   * option: [value, label]
+   * depends: { on, when: { value: [允许的option value] } }  简单联动（同 /home）
+   */
+  TASK_META: [
+    {
+      task: 'yuhun', label: '御魂', fields: [
+        { name: 'type', label: '副本类型', kind: 'select', def: '八岐大蛇',
+          options: [['八岐大蛇', '八岐大蛇'], ['业原火', '业原火']] },
+        { name: 'count', label: '挑战次数', kind: 'number', def: '0', min: 0, note: '0 为不限次数' },
+        { name: 'team', label: '组队模式', kind: 'select', def: 'leader',
+          options: [['leader', '队长'], ['member', '队员'], ['solo', '单人']],
+          depends: { on: 'type', when: { '八岐大蛇': ['leader', 'member'], '业原火': ['solo'] } } }
+      ]
+    },
+    {
+      task: 'yuling', label: '御灵', fields: [
+        { name: 'boss', label: '挑战对象', kind: 'select', def: '暗神龙',
+          options: [['暗神龙', '暗神龙'], ['暗白藏主', '暗白藏主'], ['暗黑豹', '暗黑豹'], ['暗朱雀', '暗朱雀']] },
+        { name: 'layer', label: '挑战层数', kind: 'select', def: '三层',
+          options: [['三层', '第三层'], ['二层', '第二层'], ['一层', '第一层']] },
+        { name: 'count', label: '挑战次数', kind: 'number', def: '100', min: 0, note: '0 为不限次数' }
+      ]
+    },
+    {
+      task: 'douji', label: '斗技', fields: [
+        { name: 'count', label: '战斗模式', kind: 'select', def: 'none',
+          options: [['none', '不限次数'], ['point', '荣誉点满']] }
+      ]
+    },
+    {
+      task: 'tupo', label: '突破', fields: [
+        { name: 'type', label: '突破类型', kind: 'select', def: '个人突破',
+          options: [['个人突破', '个人突破'], ['寮突破', '寮突破']] },
+        { name: 'refresh', label: '自动刷新', kind: 'select', def: 'yes',
+          options: [['yes', '失败后自动刷新'], ['no', '不刷新']] },
+        { name: 'sleep', label: '战斗间隔', kind: 'number', def: '15', min: 1, note: '单位秒，建议 10~15' }
+      ]
+    },
+    {
+      task: 'k28', label: '困28', fields: [
+        { name: 'count', label: '突破上限', kind: 'number', def: '25', min: 0, max: 30, note: '0 为不清突破，推荐 25' },
+        { name: 'lunhuan', label: '轮换狗粮', kind: 'select', def: '素材',
+          options: [['素材', '素材'], ['N卡', 'N卡']] }
+      ]
+    },
+    {
+      task: 'yinjie', label: '英杰', fields: [
+        { name: 'type', label: '挑战类型', kind: 'select', def: '藤原道长',
+          options: [['源赖光', '源赖光(暂未实现)'], ['藤原道长', '藤原道长']] },
+        { name: 'skill', label: '技能选择', kind: 'select', def: '藤原PVE',
+          options: [['源赖光PVE', '源赖光PVE'], ['源赖光PVP', '源赖光PVP'],
+                    ['藤原PVE', '藤原PVE'], ['藤原PVP', '藤原PVP']],
+          depends: { on: 'type', when: { '源赖光': ['源赖光PVE', '源赖光PVP'], '藤原道长': ['藤原PVE', '藤原PVP'] } } },
+        { name: 'refresh', label: '容错次数', kind: 'number', def: '3', min: 1 }
+      ]
+    },
+    {
+      task: 'huodong', label: '活动', fields: [
+        { name: 'type', label: '活动类型', kind: 'select', def: 'normal',
+          options: [['normal', '爬塔'], ['type1', '修行合训'], ['type2', '大富翁']] },
+        { name: 'count', label: '挑战次数', kind: 'number', def: '50', min: 0, step: 10, note: '0 为不限次数' }
+      ]
+    }
+  ],
+  CUSTOM_TASK: 'custom',
+
+  init() {
+    this.els = {
+      deviceSel: document.getElementById('deviceSel'),
+      deviceRefreshBtn: document.getElementById('deviceRefreshBtn'),
+      devHint: document.getElementById('devHint'),
+      chipRow: document.getElementById('chipRow'),
+      cfgBody: document.getElementById('cfgBody'),
+      customHint: document.getElementById('customHint'),
+      actionBtn: document.getElementById('actionBtn'),
+      actionLabel: document.getElementById('actionLabel'),
+      actionIcon: document.getElementById('actionIcon'),
+      stateDot: document.getElementById('stateDot'),
+      stateText: document.getElementById('stateText'),
+      runningTask: document.getElementById('runningTask'),
+      lastLog: document.getElementById('lastLog'),
+      toast: document.getElementById('toast')
+    };
+
+    this.els.deviceRefreshBtn.addEventListener('click', () => this.refreshDevices());
+    this.els.actionBtn.addEventListener('click', () => this.onActionClick());
+
+    this.connectWS();
+    this.loadDevices();
+    this.startPolling();
+  },
+
+  /* ==================== 设备 ==================== */
+  async loadDevices() {
+    this.els.deviceRefreshBtn.classList.add('spinning');
+    try {
+      const resp = await fetch('/api/get_devices', { cache: 'no-store' });
+      const data = await resp.json();
+      this.devices = (data && data.devices) || [];
+    } catch (e) {
+      this.devices = [];
+    }
+    this.els.deviceRefreshBtn.classList.remove('spinning');
+
+    // 下拉框
+    const sel = this.els.deviceSel;
+    sel.innerHTML = '';
+    if (!this.devices.length) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '未发现设备';
+      sel.appendChild(opt);
+      this.showDevHint('没有检测到 ADB 设备。请确认设备已连接(无线调试/USB)，然后点右侧刷新。');
+    } else {
+      this.devices.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d;
+        opt.textContent = d;
+        sel.appendChild(opt);
+      });
+      this.hideDevHint();
+    }
+
+    // 选默认设备：URL 指定 > 上次记忆 > 第一个
+    let target = this.PAGE_DEVICE;
+    if (!target || !this.devices.includes(target)) {
+      try { target = localStorage.getItem('onmyoji:float:device') || ''; } catch (e) { target = ''; }
+    }
+    if (!target || !this.devices.includes(target)) {
+      target = this.devices[0] || '';
+    }
+    sel.value = target;
+    this.onDeviceChange();
+  },
+
+  async refreshDevices() {
+    await this.loadDevices();
+    if (this.devices.length) {
+      this.toastMsg('设备列表已刷新');
+    } else {
+      this.toastMsg('仍未检测到设备', true);
+    }
+  },
+
+  showDevHint(msg) {
+    this.els.devHint.textContent = msg;
+    this.els.devHint.hidden = false;
+  },
+  hideDevHint() {
+    this.els.devHint.hidden = true;
+  },
+
+  /* ==================== 设备切换 ==================== */
+  async onDeviceChange() {
+    this.device = this.els.deviceSel.value || '';
+    try { localStorage.setItem('onmyoji:float:device', this.device); } catch (e) {}
+
+    // 记忆当前任务（按设备）
+    this.activeTask = '';
+    if (this.device) {
+      try {
+        const prev = localStorage.getItem(`onmyoji:float:task:${this.device}`) || '';
+        if (prev) this.activeTask = prev;
+      } catch (e) {}
+    }
+
+    await this.fetchLastConfigs();
+
+    // 重建任务列表
+    this.rebuildTasks();
+
+    // 立即查询一次状态
+    await this.checkStatus();
+  },
+
+  /* ==================== 最近配置 ==================== */
+  async fetchLastConfigs() {
+    this.lastConfigs = {};
+    if (!this.device) return;
+    try {
+      const r = await fetch(`/api/task_last_configs?device=${encodeURIComponent(this.device)}`, { cache: 'no-store' });
+      const data = await r.json();
+      if (data && data.success) this.lastConfigs = data.configs || {};
+    } catch (e) {
+      this.lastConfigs = {};
+    }
+  },
+
+  /* ==================== 任务列表 ==================== */
+  rebuildTasks() {
+    this.tasks = this.TASK_META.map(m => m.task);
+    // 内置任务全部展示；自定义任务需到完整控制台 /home 编辑并运行
+
+    this.renderChips();
+
+    // 保持上次选中的任务仍存在，否则回退第一个
+    if (!this.activeTask || !this.tasks.includes(this.activeTask)) {
+      this.activeTask = this.tasks[0] || '';
+    }
+    this.selectTask(this.activeTask);
+  },
+
+  taskLabel(task) {
+    if (task === this.CUSTOM_TASK) return '自定义';
+    const m = this.TASK_META.find(t => t.task === task);
+    return m ? m.label : task;
+  },
+
+  renderChips() {
+    const row = this.els.chipRow;
+    row.innerHTML = '';
+    this.tasks.forEach(task => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'chip' + (this.lastConfigs[task] ? ' recent' : '');
+      btn.dataset.task = task;
+      btn.textContent = this.taskLabel(task);
+      btn.addEventListener('click', () => this.selectTask(task));
+      row.appendChild(btn);
+    });
+  },
+
+  /* ==================== 选中任务 + 表单 ==================== */
+  selectTask(task) {
+    if (this.busy) return;
+    if (this.running) {
+      this.toastMsg('当前有任务在运行，请先点击「终止」', true);
+      return;
+    }
+    if (!this.tasks.includes(task)) return;
+
+    this.activeTask = task;
+    document.querySelectorAll('#chipRow .chip').forEach(el => {
+      el.classList.toggle('active', el.dataset.task === task);
+    });
+    try { localStorage.setItem(`onmyoji:float:task:${this.device}`, task); } catch (e) {}
+
+    this.renderConfig(task);
+  },
+
+  renderConfig(task) {
+    const body = this.els.cfgBody;
+    const hint = this.els.customHint;
+    body.innerHTML = '';
+    hint.hidden = true;
+
+    if (task === this.CUSTOM_TASK) {
+      // 只读提示 + 一键按最近步骤运行
+      const cfg = this.lastConfigs[task] || {};
+      let stepCount = 0;
+      try {
+        const arr = typeof cfg.steps === 'string' ? JSON.parse(cfg.steps || '[]') : (cfg.steps || []);
+        stepCount = Array.isArray(arr) ? arr.length : 0;
+      } catch (e) {}
+      const name = (cfg.custom_task_name || '').trim() || '未命名任务';
+      hint.innerHTML = `将按最近的步骤配置运行：<b>${this.escapeHtml(name)}</b>（共 ${stepCount} 步）。
+        <br>修改/新增步骤请到 <a href="/home?device=${encodeURIComponent(this.device)}">完整控制台</a>。`;
+      hint.hidden = false;
+      return;
+    }
+
+    const meta = this.TASK_META.find(t => t.task === task);
+    if (!meta) return;
+
+    const title = document.createElement('div');
+    title.className = 'cfg-title';
+    title.textContent = `${meta.label}参数`;
+    body.appendChild(title);
+
+    const recent = this.lastConfigs[task] || {};
+
+    // 组装字段 DOM，并记录引用
+    this._fields = [];
+    meta.fields.forEach(f => {
+      const row = document.createElement('div');
+      row.className = 'f-row';
+
+      const label = document.createElement('label');
+      label.className = 'f-label';
+      label.textContent = f.label;
+      row.appendChild(label);
+
+      const wrap = document.createElement('div');
+      wrap.className = 'f-ctl';
+
+      const ctl = document.createElement(f.kind === 'select' ? 'select' : 'input');
+      ctl.className = 'ctl';
+      ctl.dataset.fname = f.name;
+
+      if (f.kind === 'select') {
+        f.options.forEach(([val, lbl]) => {
+          const opt = document.createElement('option');
+          opt.value = val;
+          opt.textContent = lbl;
+          ctl.appendChild(opt);
+        });
+      } else {
+        ctl.type = 'number';
+        if (f.min !== undefined) ctl.min = f.min;
+        if (f.max !== undefined) ctl.max = f.max;
+        if (f.step !== undefined) ctl.step = f.step;
+      }
+
+      // 默认值：最近配置 > schema 默认
+      const recentVal = recent[f.name];
+      ctl.value = (recentVal !== undefined && recentVal !== null && recentVal !== '')
+        ? String(recentVal) : String(f.def);
+
+      if (f.note) {
+        const note = document.createElement('span');
+        note.className = 'f-note';
+        note.textContent = f.note;
+        wrap.appendChild(ctl);
+        wrap.appendChild(note);
+      } else {
+        wrap.appendChild(ctl);
+      }
+
+      row.appendChild(wrap);
+      body.appendChild(row);
+
+      this._fields.push({ field: f, ctl });
+    });
+
+    // 依赖联动：主字段变化时过滤从字段的可选值
+    this._fields.forEach(({ field, ctl }) => {
+      if (field.depends) {
+        const source = this._fields.find(x => x.field.name === field.depends.on);
+        if (source) {
+          source.ctl.addEventListener('change', () => this.applyDependency(source.ctl));
+          this.applyDependency(source.ctl);
+        }
+      }
+    });
+  },
+
+  /** 根据触发字段当前值，过滤所有依赖它的从字段 option */
+  applyDependency(sourceCtl) {
+    this._fields.forEach(({ field, ctl }) => {
+      if (!field.depends || field.depends.on !== sourceCtl.dataset.fname) return;
+      const allowed = field.depends.when[sourceCtl.value] || [];
+      let current = ctl.value;
+      Array.from(ctl.options).forEach(opt => {
+        opt.style.display = allowed.includes(opt.value) ? '' : 'none';
+      });
+      // 当前选中的值不可用则切到第一个可用值
+      if (!allowed.includes(current)) {
+        ctl.value = allowed[0] || '';
+      }
+    });
+  },
+
+  /** 收集当前任务 config（含未在面板展示的隐藏字段默认） */
+  collectConfig() {
+    if (this.activeTask === this.CUSTOM_TASK) {
+      // 自定义任务：完整携带最近的步骤配置
+      return { ...(this.lastConfigs[this.CUSTOM_TASK] || {}) };
+    }
+
+    const cfg = {};
+    (this._fields || []).forEach(({ field, ctl }) => {
+      cfg[field.name] = ctl.value;
+    });
+    // 未展示字段：日志级别沿用最近一次，默认 less
+    const recent = this.lastConfigs[this.activeTask] || {};
+    cfg.mode = (recent.mode !== undefined && recent.mode !== '') ? recent.mode : 'less';
+    return cfg;
+  },
+
+  /* ==================== 运行 / 终止 ==================== */
+  onActionClick() {
+    if (this.running) {
+      this.stopTask();
+    } else {
+      this.startTask();
+    }
+  },
+
+  async startTask() {
+    if (!this.device || !this.activeTask || this.busy) return;
+
+    this.busy = true;
+    this.els.actionBtn.disabled = true;
+    this.els.actionLabel.textContent = '正在启动…';
+
+    const payload = {
+      task: this.activeTask,
+      device: this.device,
+      config: this.collectConfig()
+    };
+
+    try {
+      const resp = await fetch('/api/start_task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        this.pushLocalLog('已提交任务：' + this.taskLabel(this.activeTask), 'info');
+        this.toastMsg('任务已启动');
+        // 启动成功后刷新最近配置（参数已被后端记录，便于下次回填）
+        await this.fetchLastConfigs();
+        this.renderChips();
+        document.querySelectorAll('#chipRow .chip').forEach(el => {
+          el.classList.toggle('active', el.dataset.task === this.activeTask);
+        });
+        // 若自定义任务第一次加入列表，也无需处理（已选中即在该列表）
+        await this.checkStatus();
+      } else {
+        const msg = (data && data.message) || '启动失败';
+        this.pushLocalLog(msg, 'error');
+        this.toastMsg(msg, true);
+      }
+    } catch (e) {
+      this.pushLocalLog('请求失败: ' + e.message, 'error');
+      this.toastMsg('请求失败，请检查服务是否在运行', true);
+    } finally {
+      this.busy = false;
+      this.renderActionState();
+    }
+  },
+
+  async stopTask() {
+    if (!this.device || this.busy) return;
+
+    this.busy = true;
+    this.els.actionBtn.disabled = true;
+    this.els.actionLabel.textContent = '正在终止…';
+
+    try {
+      const resp = await fetch('/api/stop_task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device: this.device })
+      });
+      const data = await resp.json();
+      if (data && data.success) {
+        this.pushLocalLog('已发送终止指令，等待任务退出…', 'warning');
+        this.toastMsg('终止指令已发送');
+      } else {
+        this.pushLocalLog((data && data.message) || '终止失败', 'error');
+        this.toastMsg((data && data.message) || '终止失败', true);
+      }
+    } catch (e) {
+      this.toastMsg('请求失败: ' + e.message, true);
+    } finally {
+      this.busy = false;
+      this.renderActionState();
+      // 稍后轮询会刷新真实状态
+    }
+  },
+
+  /* ==================== 状态轮询 ==================== */
+  startPolling() {
+    this.checkStatus();
+    this.pollTimer = setInterval(() => this.checkStatus(), 2000);
+  },
+
+  async checkStatus() {
+    if (!this.device) {
+      this.setState(false, '', '未选择设备');
+      return;
+    }
+    try {
+      const resp = await fetch(`/api/task_status?device=${encodeURIComponent(this.device)}`, { cache: 'no-store' });
+      const data = await resp.json();
+      this.running = !!data.running;
+      this.runningTaskName = data.task_name || '';
+      if (this.running) {
+        this.setState(true, this.runningTaskName, '任务运行中');
+      } else {
+        this.setState(false, '', '空闲');
+      }
+    } catch (e) {
+      this.setState(false, '', '服务连接失败');
+    }
+    this.renderActionState();
+  },
+
+  setState(running, taskName, text) {
+    const dot = this.els.stateDot;
+    dot.className = 'statusline__dot ' + (running ? 'busy' : 'idle');
+    this.els.stateText.textContent = text;
+
+    const badge = this.els.runningTask;
+    if (running && taskName) {
+      badge.textContent = this.taskLabel(taskName);
+      badge.hidden = false;
+    } else {
+      badge.hidden = true;
+    }
+
+    // 运行中锁住任务切换与参数编辑
+    this.setFormLocked(running);
+  },
+
+  setFormLocked(locked) {
+    document.querySelectorAll('#chipRow .chip').forEach(el => {
+      el.disabled = locked;
+      el.style.opacity = locked ? '.55' : '';
+    });
+    if (this._fields) {
+      this._fields.forEach(({ ctl }) => { ctl.disabled = locked; });
+    }
+    this.els.deviceSel.disabled = locked;
+  },
+
+  renderActionState() {
+    const btn = this.els.actionBtn;
+    const icon = this.els.actionIcon;
+
+    if (!this.device) {
+      btn.disabled = true;
+      btn.classList.remove('stop');
+      icon.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"></polygon></svg>';
+      this.els.actionLabel.textContent = '请选择设备';
+      return;
+    }
+
+    if (this.busy) {
+      btn.disabled = true;
+      return;
+    }
+
+    btn.disabled = false;
+    if (this.running) {
+      btn.classList.add('stop');
+      icon.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>';
+      this.els.actionLabel.textContent = '终止任务';
+    } else {
+      btn.classList.remove('stop');
+      icon.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"></polygon></svg>';
+      this.els.actionLabel.textContent = '开始运行';
+    }
+  },
+
+  /* ==================== 日志 ==================== */
+  connectWS() {
+    try {
+      this.ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/logs');
+      this.ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.type === 'history' && Array.isArray(data.logs)) {
+            // 只看最近一条
+            for (let i = data.logs.length - 1; i >= 0; i--) {
+              const l = data.logs[i];
+              if (!l.source || l.source === this.device) { this.renderLog(l, true); break; }
+            }
+          } else if (data.message !== undefined) {
+            if (!data.source || data.source === this.device) this.renderLog(data, false);
+          }
+        } catch (e) {}
+      };
+      this.ws.onclose = () => {
+        // 断开后 3 秒重连
+        setTimeout(() => {
+          if (document.visibilityState !== 'hidden') this.connectWS();
+        }, 3000);
+      };
+    } catch (e) {
+      setTimeout(() => this.connectWS(), 5000);
+    }
+  },
+
+  /** 渲染一条日志到"最近日志"单行（只保留最新一条，保持小窗清爽） */
+  renderLog(data) {
+    const el = this.els.lastLog;
+    el.innerHTML = '';
+
+    const spanTime = document.createElement('span');
+    spanTime.className = 'log-time';
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    spanTime.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+
+    const spanMsg = document.createElement('span');
+    const level = data.level || 'info';
+    spanMsg.className = 'log-' + (['success', 'warning', 'error', 'info'].includes(level) ? level : 'info');
+    spanMsg.textContent = data.message;
+
+    el.appendChild(spanTime);
+    el.appendChild(spanMsg);
+  },
+
+  pushLocalLog(msg, level) {
+    this.renderLog({ message: msg, level, source: this.device });
+  },
+
+  /* ==================== 其它 ==================== */
+  toastMsg(msg, err = false) {
+    const t = this.els.toast;
+    t.textContent = msg;
+    t.classList.toggle('err', err);
+    t.hidden = false;
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => { t.hidden = true; }, 2200);
+  },
+
+  escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+};
+
+document.addEventListener('DOMContentLoaded', () => FloatApp.init());

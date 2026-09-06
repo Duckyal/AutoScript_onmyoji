@@ -339,7 +339,10 @@ async def run_task(request: Request):
         # 创建并注册 asyncio 任务
         task_obj = asyncio.create_task(task_wrapper())
         task_manager.register_task(device_id, task_obj, task_name)
-        
+
+        # 记录本次成功启动的任务参数（供悬浮窗遥控页回填/一键重跑）
+        task_manager.save_recent_config(device_id, task_name, config)
+
         return {"success": True, "message": "任务已开始"}
         
     except Exception as e:
@@ -374,6 +377,15 @@ async def stop_task_api(request: Request):
     trigger_stop_signal(device_id)
     
     return {"success": True, "message": "终止指令已发送"}
+
+
+# --- 悬浮窗遥控页：最近任务参数 ---
+@router.get("/api/task_last_configs")
+def get_task_last_configs(device: str = None):
+    """获取某设备各任务最近一次的启动参数（悬浮窗遥控页用它按上次参数回填/重跑）"""
+    if not device:
+        return {"success": False, "configs": {}}
+    return {"success": True, "configs": task_manager.get_recent_configs(device)}
 
 
 # ===============================================================================================================================

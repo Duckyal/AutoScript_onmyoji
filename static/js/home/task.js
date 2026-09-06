@@ -62,9 +62,29 @@ const TaskManager = {
     }
   },
 
+  // ============ 任务面板状态记忆 (dev/home 切换后保持所在任务页) ============
+  // 与自定义任务页一致，使用 localStorage 记忆；按设备隔离，避免多设备互相覆盖
+  getLastTask() {
+    try {
+      return localStorage.getItem(`onmyoji:lastTask:${window.PAGE_DEVICE || ''}`) || '';
+    } catch (e) {
+      return '';
+    }
+  },
+
+  saveLastTask(taskName) {
+    if (!taskName) return;
+    try {
+      localStorage.setItem(`onmyoji:lastTask:${window.PAGE_DEVICE || ''}`, taskName);
+    } catch (e) {
+      // localStorage 满或禁用，静默忽略
+    }
+  },
+
   switchTask(taskName, displayName) {
     this.currentTask = taskName;
-    
+    this.saveLastTask(taskName); // 记住当前所在任务页
+
     // 更新侧边栏激活状态
     document.querySelectorAll('.sidebar-task__item').forEach(item => {
       item.classList.toggle('active', item.dataset.task === taskName);

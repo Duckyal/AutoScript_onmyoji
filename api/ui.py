@@ -30,6 +30,15 @@ async def wallpaper():
     return {"url": m.group(0) if m else ""}
 
 
+@router.get("/float")
+async def float_page(request: Request, device: str = ""):
+    """悬浮窗遥控页：选设备 → 选任务(可改常用参数) → 运行/终止
+    设备不在此校验，由页面通过 /api/get_devices 动态拉取并记忆。"""
+    return templates.TemplateResponse(request, "float.html", {
+        "request": request, "time_now": time.time(),
+        "device": device
+    })
+
 @router.get("/home")
 async def home(request: Request, device: str):
     ok, msg = adb_stream.check_adb(device)

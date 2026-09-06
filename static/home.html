@@ -479,6 +479,10 @@
   </div>
    
   <!-- JavaScript 文件 -->
+  <script>
+    // 任务面板状态记忆：dev/home 页切换后保持所在任务页（按设备隔离，避免多设备互相覆盖）
+    window.PAGE_DEVICE = {{ device|tojson }};
+  </script>
   <script src="/static/js/home/custom.js?v={{ time_now }}"></script>
   <script src="/static/js/home/task.js?v={{ time_now }}"></script>
   <script src="/static/js/home/terminal.js?v={{ time_now }}"></script>
