@@ -1,6 +1,19 @@
-# AutoScript_onmyoji
+# KaguraX
 
-阴阳师游戏自动化脚本工具，提供现代化 Web 界面管理和 ADB 手机自动化功能。
+<table>
+  <tbody>
+    <tr>
+      <td align="center">
+        <img src="static/favicon_round.png" alt="KaguraX" width="180">
+      </td>
+      <td>
+
+> **項目簡介**：阴阳师游戏自动化脚本工具，提供现代化 Web 界面管理和 ADB 手机自动化功能，支持 PC（Windows / Linux / macOS）与安卓手机双端部署。
+
+> **免责声明**：本开源项目与网易公司及其游戏《阴阳师》无关，仅供学习交流使用；请合理、合法地使用本项目，遵守游戏规则与相关法律法规。
+
+  </tbody>
+</table>
 
 ## 功能特性
 
@@ -10,6 +23,8 @@
 - **OCR 识别**：集成 RapidOCR 进行图像文字识别，支持正则匹配和局部区域识别
 - **图像处理**：使用 OpenCV 进行图像分析和模板匹配，支持角优先度选择
 - **实时日志**：WebSocket 实时日志传输和终端样式显示，支持自动滚动开关、历史日志加载、设备筛选
+- **安卓悬浮遥控小窗**：安卓 App 内置悬浮窗遥控界面，支持悬浮球贴边、小窗展开/收起、返回键/返回手势收起、快速开始/终止任务
+- **App 自动更新检测**：安卓 App 自动检测项目仓库新提交与新版 APK，发现更新时提示一键升级
 - **ADB 集成**：通过 ADB 连接 Android 设备进行自动化操作
 - **可中断任务**：支持优雅停止运行中的任务
 - **多设备支持**：支持同时连接多个设备，多设备同时投屏互不干扰
@@ -26,7 +41,7 @@
 
 从 GitHub Releases 下载：
 
-> 👉 [**下载最新 APK**](https://github.com/Duckyal/AutoScript_onmyoji/releases/latest)
+> 👉 [**下载最新 APK**](https://github.com/Duckyal/KaguraX/releases/latest)
 
 ### 使用流程
 
@@ -86,8 +101,8 @@ uv --version
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/Duckyal/AutoScript_onmyoji.git
-cd AutoScript_onmyoji
+git clone https://github.com/Duckyal/KaguraX.git
+cd KaguraX
 
 # 2. 直接运行（首次自动创建 .venv 并安装依赖）
 uv run python main.py
@@ -106,8 +121,8 @@ uv run python main.py
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/Duckyal/AutoScript_onmyoji.git
-cd AutoScript_onmyoji
+git clone https://github.com/Duckyal/KaguraX.git
+cd KaguraX
 
 # 2. 创建虚拟环境
 python -m venv .venv
@@ -218,7 +233,7 @@ adb connect <设备IP>:5555
 ## 项目结构
 
 ```
-AutoScript_onmyoji/
+KaguraX/
 ├── main.py                 # 主程序入口（FastAPI 服务）
 ├── pyproject.toml          # 项目元信息和依赖声明（uv 使用）
 ├── requirements.txt        # Python 依赖（pip 使用）

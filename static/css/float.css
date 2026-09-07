@@ -79,19 +79,19 @@ html, body {
 .float-brand:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
 /* 完整页/浏览器：徽标纯展示，不可点 */
 html.env-full .float-brand { cursor: default; }
-/* 悬浮窗小窗：AutoScript 徽标即「收起」按钮（logo+名称合一，无多余图标） */
+/* 悬浮窗小窗：KaguraX 徽标即「收起」按钮（logo+名称合一，无多余图标） */
 html.env-float .float-brand { cursor: pointer; }
 html.env-float .float-brand:active { background: var(--bg-elev); }
 
 .float-brand__logo {
-  width: 18px;
-  height: 18px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   object-fit: cover;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, .15);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .18);
 }
 
-/* ============ 顶部开始 / 终止按钮（与 AutoScript 各占一边） ============ */
+/* ============ 顶部开始 / 终止按钮（与 KaguraX 各占一边） ============ */
 .action {
   appearance: none;
   flex: none;
@@ -134,7 +134,7 @@ html.env-float .float-brand:active { background: var(--bg-elev); }
   box-shadow: 0 4px 14px rgba(220, 38, 38, .35);
 }
 
-/* 收起入口已与左上角 AutoScript 徽标合并（见 .float-brand），不再使用独立圆钮。
+/* 收起入口已与左上角 KaguraX 徽标合并（见 .float-brand），不再使用独立圆钮。
    原独立「收起」圆钮已删除，顶栏右端仅剩「开始/终止」按钮。 */
 
 .pane {
@@ -395,7 +395,7 @@ html.env-float .float-brand:active { background: var(--bg-elev); }
 
 /* ==========================================================================
  * 运行环境差异（<html> 的 class 由 float.html 内联脚本按 UA 判定）：
- *   env-float —— 悬浮窗小窗(UA 带 AutoScriptFloat)：紧凑，日志区只露最新一行
+ *   env-float —— 悬浮窗小窗(UA 带 KaguraXFloat)：紧凑，日志区只露最新一行
  *   env-full  —— App「打开网页」全屏 / 浏览器：日志多行铺满剩余高度
  * ========================================================================== */
 

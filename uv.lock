@@ -64,7 +64,7 @@ wheels = [
 ]
 
 [[package]]
-name = "autoscript-onmyoji"
+name = "kagurax"
 version = "1.0.0"
 source = { editable = "." }
 dependencies = [

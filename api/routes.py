@@ -442,7 +442,7 @@ async def send_test_email_api(request: Request):
             msg["From"] = str(_Header(cfg["sender_email"]))
             msg["To"] = str(_Header(cfg["receiver_email"]))
             msg["Subject"] = str(_Header("阴阳师脚本 - 测试邮件", "utf-8"))
-            msg.attach(_MIMEText("这是一封测试邮件，如果您看到此邮件说明 SMTP 配置成功。\n\n来自 AutoScript_onmyoji", "plain", "utf-8"))
+            msg.attach(_MIMEText("这是一封测试邮件，如果您看到此邮件说明 SMTP 配置成功。\n\n来自 KaguraX", "plain", "utf-8"))
             smtp_server = cfg["smtp_server"]
             smtp_port = int(cfg.get("smtp_port", 465))
             use_ssl = bool(cfg.get("use_ssl", True))
@@ -462,7 +462,7 @@ async def send_test_email_api(request: Request):
     else:
         result = send_email(
             "阴阳师脚本 - 测试邮件",
-            "这是一封测试邮件，如果您看到此邮件说明 SMTP 配置成功。\n\n来自 AutoScript_onmyoji"
+            "这是一封测试邮件，如果您看到此邮件说明 SMTP 配置成功。\n\n来自 KaguraX"
         )
         if result["success"]:
             return result

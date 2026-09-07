@@ -19,9 +19,9 @@ const FloatApp = {
   runningTaskName: '',
   busy: false,              // 启动/停止请求中
   pollTimer: null,
-  // 悬浮窗小窗(UA 带 AutoScriptFloat)= env-float：日志只显示最新一行；
+  // 悬浮窗小窗(UA 带 KaguraXFloat)= env-float：日志只显示最新一行；
   // App「打开网页」全屏 / 浏览器 = env-full：日志多行铺满剩余高度
-  isFloatEnv: /AutoScriptFloat/i.test(navigator.userAgent),
+  isFloatEnv: /KaguraXFloat/i.test(navigator.userAgent),
 
   els: {},
   ws: null,
@@ -116,7 +116,7 @@ const FloatApp = {
     this.els.deviceRefreshBtn.addEventListener('click', () => this.refreshDevices());
     this.els.actionBtn.addEventListener('click', () => this.onActionClick());
 
-    // 收起：AutoScript 徽标即收起按钮（徽标 + 收起合一）。仅悬浮窗环境响应，
+    // 收起：KaguraX 徽标即收起按钮（徽标 + 收起合一）。仅悬浮窗环境响应，
     // 完整页/浏览器没有悬浮球可收，徽标保持纯展示不绑定收起
     this.els.floatCollapseBtn.addEventListener('click', () => {
       if (this.isFloatEnv) this.collapseFloat();
@@ -659,10 +659,10 @@ const FloatApp = {
 
   /* ==================== 其它 ==================== */
 
-  /** 收起悬浮窗小窗：调 Android 侧 AutoScriptBridge 桥把窗口收起、悬浮球回贴边。
+  /** 收起悬浮窗小窗：调 Android 侧 KaguraXBridge 桥把窗口收起、悬浮球回贴边。
    *  完整页 / 浏览器没有悬浮球可收，仅提示。 */
   collapseFloat() {
-    const bridge = window.AutoScriptBridge;
+    const bridge = window.KaguraXBridge;
     if (bridge && typeof bridge.collapse === 'function') {
       bridge.collapse();
       return;
