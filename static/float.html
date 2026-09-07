@@ -26,16 +26,13 @@
 
     <!-- 顶栏：左侧项目名 · 右侧 收起按钮(仅悬浮窗) + 开始/终止按钮 -->
     <header class="float-header">
-      <div class="float-brand">
+      <!-- 顶栏左侧徽标 = 收起按钮：圆形 logo + AutoScript 名称合成一个按钮，无其他图标。
+           仅悬浮窗环境(env-float)响应点击，经 AutoScriptBridge.collapse() JS 桥收起小窗回到悬浮球；
+           完整页/浏览器里徽标为纯展示 -->
+      <button class="float-brand" id="floatCollapseBtn" type="button"
+              title="收起悬浮窗" aria-label="收起悬浮窗">
         <img class="float-brand__logo" src="/static/favicon.ico" alt="">
         AutoScript
-      </div>
-      <!-- 收起悬浮窗：仅悬浮窗小窗显示（env-float + CSS 双保险），
-           点击经 AutoScriptBridge JS 桥收起小窗回到悬浮球；完整页/浏览器隐藏 -->
-      <button class="float-min" id="floatMinBtn" title="收起悬浮窗" aria-label="收起悬浮窗" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="6 9 12 15 18 9"></polyline>
-        </svg>
       </button>
       <button class="action" id="actionBtn" disabled>
         <span class="action__icon" id="actionIcon">

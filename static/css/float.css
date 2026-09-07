@@ -59,13 +59,29 @@ html, body {
 }
 
 .float-brand {
+  appearance: none;
   display: flex;
   align-items: center;
   gap: 7px;
+  margin: 0;
+  margin-left: -6px;               /* 视觉上与屏幕左缘对齐 */
+  padding: 2px 6px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
   font-size: 17px;
   font-weight: 700;
   letter-spacing: .5px;
+  line-height: 1.5;
 }
+.float-brand:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+/* 完整页/浏览器：徽标纯展示，不可点 */
+html.env-full .float-brand { cursor: default; }
+/* 悬浮窗小窗：AutoScript 徽标即「收起」按钮（logo+名称合一，无多余图标） */
+html.env-float .float-brand { cursor: pointer; }
+html.env-float .float-brand:active { background: var(--bg-elev); }
 
 .float-brand__logo {
   width: 18px;
@@ -118,30 +134,8 @@ html, body {
   box-shadow: 0 4px 14px rgba(220, 38, 38, .35);
 }
 
-/* ============ 顶栏「收起」圆钮（仅悬浮窗小窗显示） ============ */
-.float-min {
-  appearance: none;
-  flex: none;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  background: var(--bg-elev);
-  color: var(--text-dim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background .15s ease, color .15s ease;
-}
-.float-min svg { width: 16px; height: 16px; }
-.float-min:hover { background: var(--bg-card-solid); color: var(--text); }
-.float-min:active { transform: scale(.93); }
-/* 悬浮窗小窗：圆钮与开始按钮一组贴右，圆钮在开始按钮左侧；
-   完整页/浏览器里没有悬浮球可收，隐藏该钮 */
-html.env-float .float-min { margin-left: auto; }
-html.env-full .float-min { display: none; }
+/* 收起入口已与左上角 AutoScript 徽标合并（见 .float-brand），不再使用独立圆钮。
+   原独立「收起」圆钮已删除，顶栏右端仅剩「开始/终止」按钮。 */
 
 .pane {
   background: var(--bg-card);

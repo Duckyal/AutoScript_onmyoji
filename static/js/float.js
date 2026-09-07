@@ -105,7 +105,7 @@ const FloatApp = {
       actionBtn: document.getElementById('actionBtn'),
       actionLabel: document.getElementById('actionLabel'),
       actionIcon: document.getElementById('actionIcon'),
-      floatMinBtn: document.getElementById('floatMinBtn'),
+      floatCollapseBtn: document.getElementById('floatCollapseBtn'),
       stateDot: document.getElementById('stateDot'),
       stateText: document.getElementById('stateText'),
       runningTask: document.getElementById('runningTask'),
@@ -116,12 +116,11 @@ const FloatApp = {
     this.els.deviceRefreshBtn.addEventListener('click', () => this.refreshDevices());
     this.els.actionBtn.addEventListener('click', () => this.onActionClick());
 
-    // 「收起」按钮：仅悬浮窗小窗显示（CSS 也按环境隐藏，双保险）。
-    // 无 JS 桥（理论上不会出现）时点击仅提示，不报错
-    if (this.els.floatMinBtn && this.isFloatEnv) {
-      this.els.floatMinBtn.hidden = false;
-      this.els.floatMinBtn.addEventListener('click', () => this.collapseFloat());
-    }
+    // 收起：AutoScript 徽标即收起按钮（徽标 + 收起合一）。仅悬浮窗环境响应，
+    // 完整页/浏览器没有悬浮球可收，徽标保持纯展示不绑定收起
+    this.els.floatCollapseBtn.addEventListener('click', () => {
+      if (this.isFloatEnv) this.collapseFloat();
+    });
 
     this.connectWS();
     this.loadDevices();
