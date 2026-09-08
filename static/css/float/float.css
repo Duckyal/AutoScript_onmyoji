@@ -395,14 +395,19 @@ html.env-float .float-brand:active { background: var(--bg-elev); }
 
 /* ==========================================================================
  * 运行环境差异（<html> 的 class 由 float.html 内联脚本按 UA 判定）：
- *   env-float —— 悬浮窗小窗(UA 带 KaguraXFloat)：紧凑，日志区只露最新一行
- *   env-full  —— App「打开网页」全屏 / 浏览器：日志多行铺满剩余高度
+ *   env-float —— 悬浮窗小窗(UA 带 KaguraXFloat)：紧凑，日志区只露最新一行，
+ *                并置于「设备」与「任务」之间
+ *   env-full  —— App「打开网页」全屏 / 浏览器：日志多行铺满剩余高度（布局不变）
  * ========================================================================== */
 
-/* ---------- 悬浮窗小窗：日志锁为单行高度，超长不把面板撑高 ---------- */
-html.env-float .pane--status {
-  flex: none;
-}
+/* ---------- 悬浮窗小窗：从上到下 设备 → 日志 → 任务(chips+参数) ----------
+ * 用 order 把 DOM 末尾的状态/日志面板插到「设备」与「任务」中间；
+ * 日志锁为单行高度，超长不把面板撑高 */
+html.env-float .float-header  { order: 0; }
+html.env-float .pane--dev     { order: 1; }
+html.env-float .pane--status  { order: 2; flex: none; }
+html.env-float .chips         { order: 3; }
+html.env-float .pane--cfg     { order: 4; }
 html.env-float .lastlog {
   max-height: 34px;               /* 一行内容(含 padding/border)高度上限 */
   overflow: hidden;

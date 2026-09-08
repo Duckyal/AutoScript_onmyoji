@@ -355,10 +355,19 @@ async def run_task(request: Request):
 
 # --- 任务状态查询 ---
 @router.get("/api/task_status")
-def get_task_status(device: str):
-    is_running, name = task_manager.is_running(device)
+def get_task_status(device: str = ""):
+    """查询任务运行状态。
+    传 device 查指定设备；不传时返回「是否有任一设备在运行任务」
+    （悬浮球光环据此判断任务执行中，无需感知具体被控设备）。"""
+    if not device:
+        for dev_id in list(task_manager.active_tasks.keys()):
+            running, name = task_manager.is_running(dev_id)
+            if running:
+                return {"running": True, "task_name": name}
+        return {"running": False, "task_name": None}
+    running, name = task_manager.is_running(device)
     return {
-        "running": is_running,
+        "running": running,
         "task_name": name
     }
 

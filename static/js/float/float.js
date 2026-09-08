@@ -1,10 +1,13 @@
 /**
- * static/js/float.js —— 悬浮窗遥控页逻辑（/float）
+ * static/js/float/float.js —— 悬浮窗遥控页逻辑（/float）
  *
  * 职责：小窗里快速「选设备 → 选任务(可改常用参数) → 运行/终止」
  * - 设备：/api/get_devices 动态拉取，localStorage 记忆上次所选
+ * - 任务：不内置任务表，直接抓取 /home 页面中由 home/app.js 生成的同一批
+ *   任务面板（.task-panel，排除「自定义」）解析为字段表；以后加任务只需
+ *   在 home.html 增加配置面板，本页自动同步。
  * - 参数默认值：优先回填该设备最近一次启动该任务时的配置(/api/task_last_configs)，
- *   没有则用内置默认；也可以直接手改
+ *   没有则用面板默认；也可以直接手改
  * - 运行中：轮询 /api/task_status，大按钮切换为「终止」；WebSocket 订阅最近 1~2 行日志
  */
 const FloatApp = {
@@ -26,72 +29,14 @@ const FloatApp = {
   els: {},
   ws: null,
 
-  /* 内置任务 schema：字段与 /home 各配置面板一一对应（名称/默认值一致）。
+  /* 任务 schema：不再内置。运行时抓取 /home 页面里 home/app.js 生成（展示）的
+   * 同一批 .task-panel（排除「自定义」），解析为以下结构的字段表：
+   *   { task, label, fields: [{ name,label,kind,def,min,max,step,note,options,depends }] }
    * kind: select | number | text
    * option: [value, label]
    * depends: { on, when: { value: [允许的option value] } }  简单联动（同 /home）
    */
-  TASK_META: [
-    {
-      task: 'yuhun', label: '御魂', fields: [
-        { name: 'type', label: '副本类型', kind: 'select', def: '八岐大蛇',
-          options: [['八岐大蛇', '八岐大蛇'], ['业原火', '业原火']] },
-        { name: 'count', label: '挑战次数', kind: 'number', def: '0', min: 0, note: '0 为不限次数' },
-        { name: 'team', label: '组队模式', kind: 'select', def: 'leader',
-          options: [['leader', '队长'], ['member', '队员'], ['solo', '单人']],
-          depends: { on: 'type', when: { '八岐大蛇': ['leader', 'member'], '业原火': ['solo'] } } }
-      ]
-    },
-    {
-      task: 'yuling', label: '御灵', fields: [
-        { name: 'boss', label: '挑战对象', kind: 'select', def: '暗神龙',
-          options: [['暗神龙', '暗神龙'], ['暗白藏主', '暗白藏主'], ['暗黑豹', '暗黑豹'], ['暗朱雀', '暗朱雀']] },
-        { name: 'layer', label: '挑战层数', kind: 'select', def: '三层',
-          options: [['三层', '第三层'], ['二层', '第二层'], ['一层', '第一层']] },
-        { name: 'count', label: '挑战次数', kind: 'number', def: '100', min: 0, note: '0 为不限次数' }
-      ]
-    },
-    {
-      task: 'douji', label: '斗技', fields: [
-        { name: 'count', label: '战斗模式', kind: 'select', def: 'none',
-          options: [['none', '不限次数'], ['point', '荣誉点满']] }
-      ]
-    },
-    {
-      task: 'tupo', label: '突破', fields: [
-        { name: 'type', label: '突破类型', kind: 'select', def: '个人突破',
-          options: [['个人突破', '个人突破'], ['寮突破', '寮突破']] },
-        { name: 'refresh', label: '自动刷新', kind: 'select', def: 'yes',
-          options: [['yes', '失败后自动刷新'], ['no', '不刷新']] },
-        { name: 'sleep', label: '战斗间隔', kind: 'number', def: '15', min: 1, note: '单位秒，建议 10~15' }
-      ]
-    },
-    {
-      task: 'k28', label: '困28', fields: [
-        { name: 'count', label: '突破上限', kind: 'number', def: '25', min: 0, max: 30, note: '0 为不清突破，推荐 25' },
-        { name: 'lunhuan', label: '轮换狗粮', kind: 'select', def: '素材',
-          options: [['素材', '素材'], ['N卡', 'N卡']] }
-      ]
-    },
-    {
-      task: 'yinjie', label: '英杰', fields: [
-        { name: 'type', label: '挑战类型', kind: 'select', def: '藤原道长',
-          options: [['源赖光', '源赖光(暂未实现)'], ['藤原道长', '藤原道长']] },
-        { name: 'skill', label: '技能选择', kind: 'select', def: '藤原PVE',
-          options: [['源赖光PVE', '源赖光PVE'], ['源赖光PVP', '源赖光PVP'],
-                    ['藤原PVE', '藤原PVE'], ['藤原PVP', '藤原PVP']],
-          depends: { on: 'type', when: { '源赖光': ['源赖光PVE', '源赖光PVP'], '藤原道长': ['藤原PVE', '藤原PVP'] } } },
-        { name: 'refresh', label: '容错次数', kind: 'number', def: '3', min: 1 }
-      ]
-    },
-    {
-      task: 'huodong', label: '活动', fields: [
-        { name: 'type', label: '活动类型', kind: 'select', def: 'normal',
-          options: [['normal', '爬塔'], ['type1', '修行合训'], ['type2', '大富翁']] },
-        { name: 'count', label: '挑战次数', kind: 'number', def: '50', min: 0, step: 10, note: '0 为不限次数' }
-      ]
-    }
-  ],
+  TASK_META: [],
   CUSTOM_TASK: 'custom',
 
   init() {
@@ -124,6 +69,7 @@ const FloatApp = {
 
     this.connectWS();
     this.loadDevices();
+    this.loadTaskSchemas();   // 异步抓取 /home 任务面板 → 填充 TASK_META
     this.startPolling();
   },
 
@@ -205,7 +151,8 @@ const FloatApp = {
 
     await this.fetchLastConfigs();
 
-    // 重建任务列表
+    // 重建任务列表；若面板还没抓回来则补拉一次
+    if (!this.TASK_META.length) this.loadTaskSchemas();
     this.rebuildTasks();
 
     // 立即查询一次状态
@@ -225,15 +172,93 @@ const FloatApp = {
     }
   },
 
+  /* ==================== 任务来源：/home 任务面板（排除自定义） ==================== */
+  async loadTaskSchemas() {
+    if (this._metaLoading) return;   // 防并发重复抓取
+    this._metaLoading = true;
+    try {
+      // /home 校验设备只需任意非空字符串；面板内容与设备无关，抓到一次即可
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const dev = this.device || this.devices[0] || 'home';
+          const r = await fetch('/home?device=' + encodeURIComponent(dev), { cache: 'no-store' });
+          if (!r.ok) throw new Error('home http ' + r.status);
+          const meta = this.parseHomePanels(await r.text());
+          if (meta.length) {
+            this.TASK_META = meta;
+            this.rebuildTasks();   // 与 onDeviceChange 结果幂等，可重复调用
+            return;
+          }
+        } catch (e) {
+          // 服务刚起/页面竞态，短暂后重试
+        }
+        await new Promise(res => setTimeout(res, 1500));
+      }
+      this.toastMsg('任务面板加载失败，请稍后刷新', true);
+    } finally {
+      this._metaLoading = false;
+    }
+  },
+
+  /** 解析 /home 页的 .task-panel → [{task,label,fields}]，排除自定义任务面板 */
+  parseHomePanels(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const out = [];
+    doc.querySelectorAll('#contentMain .task-panel').forEach(panel => {
+      const task = (panel.id || '').replace(/^panel-/, '');
+      if (!task || task === this.CUSTOM_TASK) return;   // 排除自定义
+
+      const fields = [];
+      // label[for] 直接定位同组控件（home 面板各 label 的 for 均已指向存在的控件 id）
+      panel.querySelectorAll('.form-group label.form-label[for]').forEach(lbl => {
+        const group = lbl.closest('.form-group');
+        if (!group) return;
+        let ctl = null;
+        try { ctl = group.querySelector('#' + CSS.escape(lbl.htmlFor)); } catch (e) { ctl = null; }
+        if (!ctl || (ctl.tagName !== 'SELECT' && ctl.tagName !== 'INPUT') || ctl.type === 'hidden') return;
+
+        const field = {
+          name: ctl.name || ctl.id,
+          label: (lbl.textContent || '').trim(),
+          kind: ctl.tagName === 'SELECT' ? 'select' : 'number'
+        };
+        // 拆「挑战次数(0为不限)」→ label=挑战次数, note=0为不限
+        const mm = field.label.match(/^(.*?)[（(](.*)[)）]$/);
+        if (mm) { field.label = mm[1].trim(); field.note = mm[2].trim(); }
+        if (ctl.hasAttribute('min')) field.min = Number(ctl.getAttribute('min'));
+        if (ctl.hasAttribute('max')) field.max = Number(ctl.getAttribute('max'));
+        if (ctl.hasAttribute('step')) field.step = Number(ctl.getAttribute('step'));
+
+        if (ctl.tagName === 'SELECT') {
+          field.options = Array.from(ctl.options).map(o => [o.value, (o.textContent || '').trim()]);
+        } else {
+          // 非数字输入（无 min/max）按文本处理；type="float" 之类的旧写法会落到 text
+          if (ctl.type !== 'number' && !ctl.hasAttribute('min') && !ctl.hasAttribute('max')) field.kind = 'text';
+        }
+        field.def = ctl.value;
+
+        // 联动（同 /home 面板的 data-from / data-when）
+        if (ctl.dataset.from && ctl.dataset.when) {
+          try { field.depends = { on: ctl.dataset.from, when: JSON.parse(ctl.dataset.when) }; } catch (e) {}
+        }
+        // 「更多日志(mode)」不在小窗展示：启动时沿用最近一次配置
+        if (field.name === 'mode') return;
+        fields.push(field);
+      });
+      if (fields.length) out.push({ task, label: panel.dataset.name || task, fields });
+    });
+    return out;
+  },
+
   /* ==================== 任务列表 ==================== */
   rebuildTasks() {
     this.tasks = this.TASK_META.map(m => m.task);
-    // 内置任务全部展示；自定义任务需到完整控制台 /home 编辑并运行
+    // 展示 /home 面板任务；自定义任务不在此列（需到完整控制台 /home 编辑运行）
 
     this.renderChips();
 
-    // 保持上次选中的任务仍存在，否则回退第一个
-    if (!this.activeTask || !this.tasks.includes(this.activeTask)) {
+    // 保持上次选中的任务仍存在，否则回退第一个；schema 尚未就绪时不覆盖记忆值
+    if (this.tasks.length && (!this.activeTask || !this.tasks.includes(this.activeTask))) {
       this.activeTask = this.tasks[0] || '';
     }
     this.selectTask(this.activeTask);
@@ -334,7 +359,7 @@ const FloatApp = {
           ctl.appendChild(opt);
         });
       } else {
-        ctl.type = 'number';
+        ctl.type = f.kind === 'text' ? 'text' : 'number';
         if (f.min !== undefined) ctl.min = f.min;
         if (f.max !== undefined) ctl.max = f.max;
         if (f.step !== undefined) ctl.step = f.step;
