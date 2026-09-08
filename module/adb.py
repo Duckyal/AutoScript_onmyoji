@@ -10,6 +10,72 @@ import time
 import re
 
 from concurrent.futures import ThreadPoolExecutor
+import threading
+
+
+class _ScaledMainPool:
+    """
+    同一次『找图』调用中，为所有模板共享的『整屏缩放截图』候选池。
+
+    优化前：每张模板一旦原始尺寸匹配不达标，就会各自把整屏截图缩放一遍
+    （精确档 + ±0.05 微调网格，最多约 8 个尺寸）再匹配，同一帧里多张模板
+    反复做完全相同的整屏缩放。
+    优化后：候选尺寸只按设备缩放比算一次，截图也在第一次被用到时才按需缩放
+    一次并缓存，所有模板线程共享复用。候选集、顺序、插值方式、映射系数都与
+    逐模板计算时保持一致，因此匹配数值/返回结果不变。
+    """
+
+    def __init__(self, main_gray, scale_x, scale_y):
+        self._main = main_gray
+        self._scale_x = scale_x
+        self._scale_y = scale_y
+        self._lock = threading.Lock()
+        self._images = {}
+        self.avg_scale = (scale_x + scale_y) / 2
+        # 与原逻辑一致的命名：截图被缩小→ scale_down，被放大→ scale_up
+        self.kind = 'scale_down' if self.avg_scale > 1.0 else 'scale_up'
+        self.entries = self._build_entries(main_gray.shape[1], main_gray.shape[0])
+
+    # entries[idx] = (宽, 高, 缩放系数x, 缩放系数y)
+    def _build_entries(self, w_main, h_main):
+        entries = []
+        if self.avg_scale > 1.0:
+            # 方案A：缩小截图到基准分辨率（保持模板原始分辨率）
+            sx = 1.0 / self._scale_x
+            sy = 1.0 / self._scale_y
+            entries.append((int(w_main * sx), int(h_main * sy), sx, sy))
+            for dx in np.arange(-0.15, 0.151, 0.05):   # ±0.05 微调网格
+                sdx = sx + dx
+                if sdx <= 0.1 or sdx >= 0.8:
+                    continue
+                entries.append((int(w_main * sdx), int(h_main * sdx), sdx, sdx))
+        else:
+            # 方案B：放大截图到基准分辨率（保持模板原始细节）
+            sx = 1.0 / self._scale_x
+            sy = 1.0 / self._scale_y
+            entries.append((int(w_main * sx), int(h_main * sy), sx, sy))
+            for dx in np.arange(-0.15, 0.151, 0.05):
+                sdx = sx + dx
+                if sdx <= 0.5 or sdx >= 2.0:
+                    continue
+                dw = int(w_main * sdx)
+                # 与原逻辑相同的取整方式（乘法顺序保持一致，避免浮点舍入差一像素）
+                dh = int(w_main * sdx * (h_main / w_main))
+                entries.append((dw, dh, sdx, sdx))
+        return entries
+
+    def image(self, idx):
+        """按需缩放一次并缓存，供所有模板线程共享复用"""
+        img = self._images.get(idx)
+        if img is None:
+            with self._lock:
+                img = self._images.get(idx)
+                if img is None:
+                    dw, dh, _, _ = self.entries[idx]
+                    interp = cv2.INTER_AREA if self.kind == 'scale_down' else cv2.INTER_CUBIC
+                    img = cv2.resize(self._main, (dw, dh), interpolation=interp)
+                    self._images[idx] = img
+        return img
 
 
 class ADB():
@@ -52,6 +118,9 @@ class ADB():
         self.adapt_res_everytime = adapt_res_everytime
         self.current_scale = None       # 全局缓存的手机分辨率缩放比
         self.cached_templates = {}      # 缓存所有模板图的灰度矩阵和原始尺寸
+        # 每张模板的“上次命中”缓存：{img_name: {'x','y'(全屏绝对坐标),'w','h'(实测屏幕尺寸),'validated','miss'}}
+        # 用于连续帧局部优先搜索 + 记录实测缩放，分辨率变化或重新预加载时清空
+        self._find_cache = {}
         self.executor = ThreadPoolExecutor(max_workers=self.max_workers) # 复用线程池，避免高频创建销毁
         
         # ORB 检测器缓存，避免重复初始化
@@ -378,6 +447,8 @@ class ADB():
             self.current_scale_x = None
             self.current_scale_y = None
             self._pyramid_cache.clear()
+            # 分辨率变了，上一帧命中的位置/尺寸全部失效
+            self._find_cache.clear()
         if x1 != -1:
             x1 = int(self.width*x1) if isinstance(x1, float) else x1
         else:
@@ -570,6 +641,7 @@ class ADB():
             3. PIL 图片对象
         '''
         self.cached_templates.clear()
+        self._find_cache.clear()     # 换了一批模板，旧的命中缓存（名称可能复用但图不同）一并作废
         failed_count = 0
         img_index = 0
         for img in images:
@@ -753,11 +825,132 @@ class ADB():
         # 返回匹配结果(中心点x、中心点y、内切圆半径、匹配图宽、匹配图高、匹配率)
         return img_name, (center_x, center_y, r, w_resized, h_resized, float(match_ratio))
     
-    def _match_single_task(self, main_gray, img_name, sim, offset_x=0, offset_y=0, priority_corner='tl'):
+    def _pick_best_location(self, result, threshold, priority_corner, w_main, h_main):
+        """
+        与既有逻辑一致：在匹配结果中挑选最优位置 (x, y)。
+        规则：优先角优先度（越靠近指定角越好），同距离取匹配值更高的点。
+        :return: (x, y, val) 或 None
+        """
+        locations = np.where(result >= threshold)
+        best_dist = float('inf')
+        best_loc = None
+        best_val = 0
+
+        for y, x in zip(*locations):
+            val = result[y, x]
+            if priority_corner == 'tl':
+                dist = x + y
+            elif priority_corner == 'tr':
+                dist = (w_main - x) + y
+            elif priority_corner == 'bl':
+                dist = x + (h_main - y)
+            elif priority_corner == 'br':
+                dist = (w_main - x) + (h_main - y)
+            else:
+                dist = x + y
+
+            if dist < best_dist or (dist == best_dist and val > best_val):
+                best_dist = dist
+                best_loc = (x, y)
+                best_val = val
+
+        if best_loc is None:
+            return None
+        return int(best_loc[0]), int(best_loc[1]), float(best_val)
+
+    def _resize_to_target(self, template_img, tw, th):
+        """按目标尺寸缩放模板：整体缩小用 INTER_AREA、放大用 INTER_CUBIC（插值选择与原逻辑一致）"""
+        h, w = template_img.shape[:2]
+        if tw == w and th == h:
+            return template_img
+        interp = cv2.INTER_AREA if (tw <= w and th <= h) else cv2.INTER_CUBIC
+        return cv2.resize(template_img, (tw, th), interpolation=interp)
+
+    def _match_roi(self, main_gray, template_img, tw, th, sim, offset_x, offset_y,
+                   priority_corner, cx_local, cy_local):
+        """
+        在“上一帧命中中心”附近的小邻域内匹配（连续帧 UI 基本静止，开销远小于整屏扫描）。
+        :param cx_local, cy_local: 上一帧中心在当前截图(局部)坐标下的位置
+        :return: (center_x, center_y, score) 全屏绝对坐标；未命中返回 None
+        """
+        w_main, h_main = main_gray.shape[:2]
+        if tw <= 0 or th <= 0 or tw > w_main or th > h_main:
+            return None
+        # 邻域半宽：覆盖模板自身 + 少量移动余量；取得越大越稳但越慢
+        halfw = int(tw * 0.9) + 24
+        halfh = int(th * 0.9) + 24
+        x0 = max(0, cx_local - halfw)
+        x1 = min(w_main, cx_local + halfw + 1)
+        y0 = max(0, cy_local - halfh)
+        y1 = min(h_main, cy_local + halfh + 1)
+        if x1 - x0 < tw or y1 - y0 < th:
+            return None
+        roi = main_gray[y0:y1, x0:x1]
+        resized = self._resize_to_target(template_img, tw, th)
+        result = cv2.matchTemplate(roi, resized, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, _ = cv2.minMaxLoc(result)
+        if max_val < sim:
+            return None
+        best = self._pick_best_location(result, max_val, priority_corner, x1 - x0, y1 - y0)
+        if best is None:
+            return None
+        bx, by = best[0], best[1]
+        return int(bx + x0 + tw // 2) + offset_x, int(by + y0 + th // 2) + offset_y, float(max_val)
+
+    def _match_scaled_full(self, main_gray, template_img, tw, th, sim, offset_x, offset_y, priority_corner):
+        """
+        整屏单次“把模板缩放到实际尺寸后匹配”。坐标直接落在原图上，无需先整屏缩放截图。
+        :return: (center_x, center_y, score) 全屏绝对坐标；未命中返回 None
+        """
+        w_main, h_main = main_gray.shape[:2]
+        if tw <= 0 or th <= 0 or tw > w_main or th > h_main:
+            return None
+        resized = self._resize_to_target(template_img, tw, th)
+        result = cv2.matchTemplate(main_gray, resized, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, _ = cv2.minMaxLoc(result)
+        if max_val < sim:
+            return None
+        best = self._pick_best_location(result, max_val, priority_corner, w_main, h_main)
+        if best is None:
+            return None
+        bx, by = best[0], best[1]
+        return int(bx + tw // 2) + offset_x, int(by + th // 2) + offset_y, float(max_val)
+
+    def _record_verified_sizes(self, sim, test_images, main_gray, w_main, h_main):
+        """
+        记录本帧画面里“实测可匹配”的模板尺寸（预加载/适配阶段逐张验证过 ≥sim 的那批），
+        后续找图阶段即可跳过“原始直配 + ±5% 网格”的重兜底，按该实测尺寸整屏一次匹配。
+        只记录真正在真实截图上验证过的模板，避免对当前不可见的模板做无依据的缩放假设。
+        :return: 成功记录的数量
+        """
+        seed_count = 0
+        sx = self.current_scale_x
+        sy = self.current_scale_y
+        for img_name in test_images:
+            temp = self.cached_templates.get(img_name)
+            if not temp or temp['w'] < 20 or temp['h'] < 20:
+                continue
+            tw = int(temp['w'] * sx)
+            th = int(temp['h'] * sy)
+            if tw > w_main or th > h_main or tw < 10 or th < 10:
+                continue
+            resized = self._resize_to_target(temp['img'], tw, th)
+            result = cv2.matchTemplate(main_gray, resized, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, _ = cv2.minMaxLoc(result)
+            if max_val >= sim:
+                self._find_cache[img_name] = {'x': None, 'y': None, 'w': tw, 'h': th,
+                                              'validated': True, 'miss': 0}
+                seed_count += 1
+        return seed_count
+
+    def _match_single_task(self, main_gray, img_name, sim, offset_x=0, offset_y=0, priority_corner='tl', pool=None, hint=None):
         '''
         多线程内部执行的单张图匹配任务
         :param offset_x, offset_y: 局部截图相对于全屏的偏移量
         :param priority_corner: 角优先度，可选 'tl', 'tr', 'bl', 'br'，默认左上角tl
+        :param pool: 共享的整屏缩放候选池（同一次找图中所有模板复用同一批缩放截图，
+                     传入 None 时退化为只做原始尺寸直接匹配）
+        :param hint: 该模板上一帧的命中缓存 {x, y, w, h, validated}；x/y 为全屏绝对坐标
         '''
         temp_info = self.cached_templates.get(img_name)
         if not temp_info:
@@ -777,6 +970,53 @@ class ADB():
         
         # 计算平均缩放因子
         avg_scale = (base_scale_x + base_scale_y) / 2
+
+        native_w = temp_info['w']
+        native_h = temp_info['h']
+
+        # ========== 阶段1：局部邻域优先（连续帧静止 UI：命中时开销只有整屏的百分之几） ==========
+        # 复用上一帧命中的位置与实测尺寸，只在上次中心附近的小区域里匹配
+        if (hint is not None and hint.get('x') is not None and hint.get('y') is not None
+                and hint.get('w') and hint.get('h')):
+            hw, hh = int(hint['w']), int(hint['h'])
+            cx_local = int(hint['x']) - offset_x
+            cy_local = int(hint['y']) - offset_y
+            attempts = [(hw, hh)]
+            # 再补一次“原始模板尺寸”的尝试，覆盖控件不随分辨率缩放（固定像素）的情况
+            if (native_w, native_h) != (hw, hh):
+                attempts.append((native_w, native_h))
+            for tw, th in attempts:
+                if tw < 10 or th < 10:
+                    continue
+                hit = self._match_roi(main_gray, temp_info['img'], tw, th, sim,
+                                      offset_x, offset_y, priority_corner, cx_local, cy_local)
+                if hit is not None:
+                    cx, cy, score = hit
+                    if self.mode == "more":
+                        self.log(f"找图成功(局部优先): {img_name} (匹配度:{score:.4f}, 尺寸:{tw}x{th})", 'debug')
+                    min_side = min(tw, th)
+                    r = self._calc_click_radius(min_side)
+                    return img_name, (cx, cy, r, tw, th, float(score))
+
+        # ========== 阶段2：已核验缩放比例的模板 → 整屏单次精确匹配 ==========
+        # validated=True 表示该尺寸曾在真实画面里以 ≥sim 验证通过（预加载阶段记录，或上一帧命中）。
+        # 把模板缩放到实测尺寸后整屏搜一次即可命中；未命中可直接认为当前不存在，
+        # 不必再走“原始尺寸 + ±5% 网格”那套较重兜底——这是预加载记录分辨率提速的关键。
+        if hint is not None and hint.get('validated'):
+            tw = int(hint.get('w') or native_w)
+            th = int(hint.get('h') or native_h)
+            hit = self._match_scaled_full(main_gray, temp_info['img'], tw, th, sim,
+                                          offset_x, offset_y, priority_corner)
+            if hit is not None:
+                cx, cy, score = hit
+                if self.mode == "more":
+                    self.log(f"找图成功(实测尺寸整屏): {img_name} (匹配度:{score:.4f}, 尺寸:{tw}x{th})", 'debug')
+                min_side = min(tw, th)
+                r = self._calc_click_radius(min_side)
+                return img_name, (cx, cy, r, tw, th, float(score))
+            return None
+
+        # ========== 阶段3：原始方法（未核验过/无缓存的模板，行为与旧逻辑一致） ==========
 
         # ========== 优化策略：先尝试原始尺寸直接匹配 ==========
         # 直接用原始模板尺寸在大图中搜索，避免缩放带来的撕裂和精度损失
@@ -842,117 +1082,41 @@ class ADB():
                 
                 return img_name, (center_x, center_y, r, actual_w, actual_h, float(best_val))
         
-        # ========== 智能双向匹配策略（作为 fallback，与原始尺寸匹配比较） ==========
-        # - 当缩放因子 > 1（需要放大模板）：缩小截图，保持模板细节完整
-        # - 当缩放因子 <= 1（需要缩小模板）：缩小模板，保持截图细节完整
-        
-        # 初始化最佳匹配结果
+        # ========== 智能双向缩放匹配（作为 fallback） ==========
+        # 缩放整屏截图开销大，且同一帧所有模板共享同一组缩放参数；
+        # 通过 pool 让缩放只按需发生一次并全体复用，避免 N 张模板重复缩放整屏。
+        # 候选0 为「精确档」（按当前缩放比），候选1.. 为 ±0.05 微调网格，
+        # 尺寸/插值/映射系数与原逻辑逐模板计算时完全一致，因此匹配数值不变。
         best_match = None
         best_match_val = max(direct_max_val, 0.0)
-        
-        if avg_scale > 1.0:
-            # 方案A：缩小截图，保持模板原始分辨率
-            # 计算需要将截图缩小到的尺寸
-            scale_down_x = 1.0 / base_scale_x
-            scale_down_y = 1.0 / base_scale_y
-            
-            target_w = int(w_main * scale_down_x)
-            target_h = int(h_main * scale_down_y)
-            
-            if target_w >= temp_info['w'] and target_h >= temp_info['h']:
-                # 使用 INTER_AREA 缩小截图，效果最好
-                resized_main = cv2.resize(main_gray, (target_w, target_h), interpolation=cv2.INTER_AREA)
-                
-                # 直接使用原始模板匹配
-                result = cv2.matchTemplate(resized_main, temp_info['img'], cv2.TM_CCOEFF_NORMED)
-                _, max_val, _, _ = cv2.minMaxLoc(result)
-                
-                if max_val > best_match_val:
-                    best_match_val = max_val
-                    best_match = ('scale_down', result, temp_info['w'], temp_info['h'], 
-                                  target_w, target_h, scale_down_x, scale_down_y)
-            
-            # fallback 搜索：搜索缩小比例
-            if best_match_val < 0.85:
-                search_range = np.arange(-0.15, 0.151, 0.05)
-                
-                for dx in search_range:
-                    check_stop(self)
-                    sdx = scale_down_x + dx
-                    if sdx <= 0.1 or sdx >= 0.8:
-                        continue
-                    
-                    sdw = int(w_main * sdx)
-                    sdh = int(h_main * sdx)
-                    if sdw < temp_info['w'] or sdh < temp_info['h']:
-                        continue
-                    
-                    resized_m = cv2.resize(main_gray, (sdw, sdh), interpolation=cv2.INTER_AREA)
-                    fallback_result = cv2.matchTemplate(resized_m, temp_info['img'], cv2.TM_CCOEFF_NORMED)
-                    _, f_max_val, _, _ = cv2.minMaxLoc(fallback_result)
-                    
-                    if f_max_val > best_match_val:
-                        best_match_val = f_max_val
-                        best_match = ('scale_down', fallback_result, temp_info['w'], temp_info['h'], 
-                                      sdw, sdh, sdx, sdx)
-        else:
-            # 方案B：放大截图到基准分辨率，保持模板原始细节（修复细节丢失问题）
-            # 计算需要将截图放大到的尺寸（基准分辨率）
-            scale_up_x = 1.0 / base_scale_x
-            scale_up_y = 1.0 / base_scale_y
-            
-            target_w = int(w_main * scale_up_x)
-            target_h = int(h_main * scale_up_y)
-            
-            if target_w >= temp_info['w'] and target_h >= temp_info['h']:
-                # 使用 INTER_CUBIC 放大截图，保持细节
-                resized_main = cv2.resize(main_gray, (target_w, target_h), interpolation=cv2.INTER_CUBIC)
-                
-                # 直接使用原始模板匹配
-                result = cv2.matchTemplate(resized_main, temp_info['img'], cv2.TM_CCOEFF_NORMED)
-                _, max_val, _, _ = cv2.minMaxLoc(result)
-                
-                if max_val > best_match_val:
-                    best_match_val = max_val
-                    best_match = ('scale_up', result, temp_info['w'], temp_info['h'], 
-                                  target_w, target_h, scale_up_x, scale_up_y)
-            
-            # fallback 搜索：搜索放大比例的微调
-            if best_match_val < 0.85:
-                search_range = np.arange(-0.15, 0.151, 0.05)
 
-                for dx in search_range:
+        if pool is not None:
+            entries = pool.entries
+
+            def _try_candidate(idx):
+                nonlocal best_match, best_match_val
+                dw, dh, fx, fy = entries[idx]
+                if dw < temp_info['w'] or dh < temp_info['h']:
+                    return
+                if dw == w_main and dh == h_main:
+                    # 与原始截图同尺寸：结果恒等于上面已算过的直接匹配，无需重算
+                    return
+                resized = pool.image(idx)
+                result = cv2.matchTemplate(resized, temp_info['img'], cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, _ = cv2.minMaxLoc(result)
+                if max_val > best_match_val:
+                    best_match_val = max_val
+                    best_match = (pool.kind, result, temp_info['w'], temp_info['h'], dw, dh, fx, fy)
+
+            if entries:
+                _try_candidate(0)
+            # 精确档仍不够好时（<0.85）才搜索微调网格，与原逻辑一致
+            if best_match_val < 0.85:
+                for idx in range(1, len(entries)):
                     check_stop(self)
-                    sdx = scale_up_x + dx
-                    if sdx <= 0.5 or sdx >= 2.0:
-                        continue
-                    
-                    sdw = int(w_main * sdx)
-                    sdh = int(w_main * sdx * (h_main / w_main))  # 保持宽高比
-                    if sdw < temp_info['w'] or sdh < temp_info['h']:
-                        continue
-                    
-                    resized_m = cv2.resize(main_gray, (sdw, sdh), interpolation=cv2.INTER_CUBIC)
-                    fallback_result = cv2.matchTemplate(resized_m, temp_info['img'], cv2.TM_CCOEFF_NORMED)
-                    _, f_max_val, _, _ = cv2.minMaxLoc(fallback_result)
-                    
-                    if f_max_val > best_match_val:
-                        best_match_val = f_max_val
-                        best_match = ('scale_up', fallback_result, temp_info['w'], temp_info['h'], 
-                                      sdw, sdh, sdx, sdx)
-        
+                    _try_candidate(idx)
+
         # ========== 最终比较：选择最佳匹配结果 ==========
-        # 优先选择原始尺寸匹配，其次选择缩放匹配
-        # 如果两者都有结果，选择匹配度更高的
-        if direct_result is not None and direct_max_val >= sim:
-            if self.mode == "more":
-                self.log(f"找图成功(原始尺寸): {img_name} (匹配度:{direct_max_val:.4f})", 'debug')
-            return self._select_best_location(
-                direct_result, temp_info['w'], temp_info['h'], sim,
-                priority_corner, w_main, h_main, offset_x, offset_y, img_name
-            )
-        
-        # 使用用户传入的匹配阈值，而不是硬编码
         if best_match is not None and best_match_val >= sim:
             match_type, result, w_resized, h_resized, w_main_res, h_main_res, scale_x, scale_y = best_match
             if self.mode == "more":
@@ -962,21 +1126,14 @@ class ADB():
                     self.log(f"找图成功(缩放-放大截图): {img_name} (匹配度:{best_match_val:.4f})")
                 else:
                     self.log(f"找图成功(缩放-缩小模板): {img_name} (匹配度:{best_match_val:.4f})")
-            
+
             # 使用实际匹配度作为阈值，确保选择匹配度最高的位置，而不是角优先度最高的位置
-            # 这样可以避免因为角优先度导致的坐标偏移问题
-            if match_type == 'scale_down' or match_type == 'scale_up':
-                return self._select_best_location_with_scale(
-                    result, w_resized, h_resized, best_match_val,
-                    priority_corner, w_main_res, h_main_res, offset_x, offset_y, img_name,
-                    scale_x, scale_y
-                )
-            else:
-                    return self._select_best_location(
-                        result, w_resized, h_resized, best_match_val,
-                        priority_corner, w_main_res, h_main_res, offset_x, offset_y, img_name
-                    )
-        
+            return self._select_best_location_with_scale(
+                result, w_resized, h_resized, best_match_val,
+                priority_corner, w_main_res, h_main_res, offset_x, offset_y, img_name,
+                scale_x, scale_y
+            )
+
         if self.mode == "more":
             self.log(f"找图失败: {img_name} (原始尺寸匹配度:{direct_max_val:.4f}, 缩放匹配度:{best_match_val:.4f})", 'warning')
         return None
@@ -1139,6 +1296,10 @@ class ADB():
             avg_score = total_score / success_count if success_count > 0 else 0
             if self.mode == "more":
                 self.log(f"默认比例验证通过: {success_count}/{len(test_images)} 张匹配成功, 平均相似度={avg_score:.4f}", 'debug')
+            # 记录本帧实测可匹配的模板尺寸（预加载阶段的“经验分辨率”，供找图阶段提速）
+            verified = self._record_verified_sizes(sim, test_images, main_gray, w_main, h_main)
+            if self.mode == "more":
+                self.log(f"已记录 {verified} 张模板的实测缩放尺寸", 'debug')
             return True
 
         if self.mode == "more":
@@ -1239,7 +1400,12 @@ class ADB():
         self.current_scale_x = best_scale_x
         self.current_scale_y = best_scale_y
         self.current_scale = (best_scale_x + best_scale_y) / 2
-        
+
+        # 记录本帧实测可匹配的模板尺寸（预加载阶段的“经验分辨率”，供找图阶段提速）
+        verified = self._record_verified_sizes(sim, test_images, main_gray, w_main, h_main)
+        if self.mode == "more":
+            self.log(f"已记录 {verified} 张模板的实测缩放尺寸", 'debug')
+
         avg_score = best_score / best_success if best_success > 0 else 0
         if self.mode == "more":
             self.log(f"优化完成: scale_x={best_scale_x:.4f}, scale_y={best_scale_y:.4f}, 统一比例={self.current_scale:.4f}, "
@@ -1271,12 +1437,37 @@ class ADB():
         main_gray = cv2.cvtColor(main_img, cv2.COLOR_BGR2GRAY) # type: ignore
 
         # 复用 init 里的线程池，避免 while 循环高频创建线程导致内存泄漏和 CPU 暴涨
-        results = list(self.executor.map(lambda name: self._match_single_task(main_gray, name, sim, offset_x, offset_y, priority_corner), img_names))
+        base_scale_x = getattr(self, 'current_scale_x', self.current_scale)
+        base_scale_y = getattr(self, 'current_scale_y', self.current_scale)
+        # 缩放候选池：同帧所有模板共用同一批缩放截图，只在真正需要时按需缩放一次并缓存。
+        # 缩放比缺失（分辨率刚变化、尚未重新适配）时传 None，交由匹配线程抛原有的异常提示
+        if base_scale_x is not None and base_scale_y is not None:
+            pool = _ScaledMainPool(main_gray, base_scale_x, base_scale_y)
+        else:
+            pool = None
+        # 命中缓存快照：交给匹配线程做“局部优先”，只读不改（写回在主线程统一做）
+        hints = {name: self._find_cache.get(name) for name in img_names}
+        results = list(self.executor.map(
+            lambda name: self._match_single_task(main_gray, name, sim, offset_x, offset_y, priority_corner, pool, hints.get(name)),
+            img_names))
 
         for result in results:
             if result:
                 img_name, value = result
                 output[img_name] = value
+                # 记录命中：全屏绝对坐标 + 实测屏幕尺寸 + 已核验标记，供下一帧局部优先搜索
+                self._find_cache[img_name] = {
+                    'x': value[0], 'y': value[1],
+                    'w': value[3], 'h': value[4],
+                    'validated': True, 'miss': 0
+                }
+        # 连续多帧都未再命中的，清理缓存，避免旧位置长期残留引发无谓的局部尝试
+        for name in img_names:
+            entry = self._find_cache.get(name)
+            if entry is not None and name not in output:
+                entry['miss'] = entry.get('miss', 0) + 1
+                if entry['miss'] >= 3:
+                    del self._find_cache[name]
         if output:
             self.log('找图：'+str(output), 'debug')
         else:

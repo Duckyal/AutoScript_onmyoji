@@ -124,7 +124,7 @@ async def handle_input(
             await asyncio.to_thread(device.长按, x1, y1, duration / 1000.0)
         elif action == "swipe":
             # duration(毫秒) 转秒作为 hold：按下后先停留再滑动（支持前端"长按拖动"，按住不松）
-            await asyncio.to_thread(device.滑动, x1, y1, x2, y2, hold=duration / 2000.0)
+            await asyncio.to_thread(device.滑动, x1, y1, x2, y2, hold=duration / 1000.0)
         elif action == "swipe_path":
             try:
                 pts = json.loads(points) if points else []
