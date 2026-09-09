@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 卡片背景：表面色大圆角，配合 View 的 elevation 产生柔和投影 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="?attr/mainCardBackground" />
+    <corners android:radius="24dp" />
+</shape>

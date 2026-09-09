@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 幽灵按钮背景：透明圆角 + 水波涟漪，仅文字/图标显色 -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/primary_alpha">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <corners android:radius="22dp" />
+        </shape>
+    </item>
+</ripple>

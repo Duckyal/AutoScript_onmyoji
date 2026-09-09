@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 分段控件「首次配对」段选中态：主色实心，仅右侧圆角（贴合外壳右缘） -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/primary_alpha">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/colorPrimary" />
+            <corners
+                android:topLeftRadius="3dp"
+                android:topRightRadius="11dp"
+                android:bottomLeftRadius="3dp"
+                android:bottomRightRadius="11dp" />
+        </shape>
+    </item>
+</ripple>

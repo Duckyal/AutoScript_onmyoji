@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!--
+     https://material.io/develop/android/theming/dark
+    -->
+
+    <!-- 项目管理器主界面主题（夜间）：深色背景 + 提亮 Indigo 主色。 -->
+    <style name="Theme.MainActivity" parent="Theme.TermuxApp.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/primary_night</item>
+        <item name="colorPrimaryVariant">@color/primary</item>
+        <item name="colorOnPrimary">@color/white</item>
+
+        <item name="colorSecondary">@color/accent_light</item>
+        <item name="colorSecondaryVariant">@color/accent</item>
+        <item name="colorOnSecondary">@color/black</item>
+
+        <item name="android:windowBackground">@color/bg_night</item>
+        <item name="android:statusBarColor" tools:targetApi="l">@color/bg_night</item>
+        <item name="android:navigationBarColor" tools:targetApi="l">@color/bg_night</item>
+        <item name="android:textColorPrimary">@color/text_primary_night</item>
+        <item name="android:textColorSecondary">@color/text_secondary_night</item>
+
+        <!-- 自定义属性（供 drawable 昼夜自适应引用） -->
+        <item name="mainPageBackground">@color/bg_night</item>
+        <item name="mainCardBackground">@color/card_night</item>
+        <item name="mainInputBackground">@color/input_bg_night</item>
+        <item name="mainInputStroke">@color/stroke_night</item>
+        <item name="mainTextPrimary">@color/text_primary_night</item>
+        <item name="mainTextSecondary">@color/text_secondary_night</item>
+        <item name="mainDivider">@color/divider_night</item>
+    </style>
+
+    <!-- TermuxActivity DayNight NoActionBar theme. -->
+    <!-- See https://developer.android.com/training/material/theme.html for how to customize the Material theme. -->
+    <!-- NOTE: Cannot use "Light." since it hides the terminal scrollbar on the default black background. -->
+    <style name="Theme.TermuxActivity.DayNight.NoActionBar" parent="Theme.TermuxApp.DayNight.NoActionBar">
+        <!-- Primary brand color. -->
+        <item name="colorPrimary">@color/black</item>
+        <item name="colorPrimaryVariant">@color/black</item>
+
+        <item name="android:windowBackground">@color/black</item>
+
+        <!-- Avoid action mode toolbar pushing down terminal content when
+             selecting text on pre-6.0 (non-floating toolbar). -->
+        <item name="android:windowActionModeOverlay">true</item>
+
+        <item name="android:windowTranslucentStatus">true</item>
+        <item name="android:windowTranslucentNavigation">true</item>
+
+        <!-- https://developer.android.com/training/tv/start/start.html#transition-color -->
+        <item name="android:windowAllowReturnTransitionOverlap">true</item>
+        <item name="android:windowAllowEnterTransitionOverlap">true</item>
+
+        <!-- Left drawer. -->
+        <item name="buttonBarButtonStyle">@style/TermuxActivity.Drawer.ButtonBarStyle.Dark</item>
+        <item name="termuxActivityDrawerBackground">@color/black</item>
+        <item name="termuxActivityDrawerImageTint">@color/white</item>
+
+        <!-- Extra keys colors. -->
+        <item name="extraKeysButtonTextColor">@color/white</item>
+        <item name="extraKeysButtonActiveTextColor">@color/red_400</item>
+        <item name="extraKeysButtonBackgroundColor">@color/black</item>
+        <item name="extraKeysButtonActiveBackgroundColor">@color/grey_500</item>
+    </style>
+
+</resources>

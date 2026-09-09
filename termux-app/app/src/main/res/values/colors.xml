@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 项目管理器主界面配色方案（Indigo + Teal 双主色） -->
+<resources>
+
+    <!-- ==================== 品牌主色（Indigo 系） ==================== -->
+    <color name="primary">#3F51B5</color>          <!-- Indigo 500：主按钮/强调 -->
+    <color name="primary_dark">#303F9F</color>     <!-- Indigo 700：状态栏/深色变体 -->
+    <color name="primary_light">#C5CAE9</color>    <!-- Indigo 100：浅色点缀 -->
+    <color name="primary_alpha">#1A3F51B5</color>  <!-- Indigo 10%：涟漪/描边半透明 -->
+
+    <!-- ==================== 辅助强调色（Teal 系） ==================== -->
+    <color name="accent">#009688</color>           <!-- Teal 500：次要强调 -->
+    <color name="accent_dark">#00796B</color>      <!-- Teal 700 -->
+    <color name="accent_light">#B2DFDB</color>     <!-- Teal 100 -->
+
+    <!-- ==================== 中性色 ==================== -->
+    <color name="white">#FFFFFF</color>
+    <color name="bg">#F5F6FA</color>               <!-- 页面浅灰蓝背景 -->
+    <color name="card">#FFFFFF</color>             <!-- 卡片表面 -->
+    <color name="text_primary">#212121</color>
+    <color name="text_secondary">#757575</color>
+    <color name="divider">#E0E0E0</color>
+    <color name="input_bg">#F0F2F7</color>         <!-- 输入框填充 -->
+    <color name="stroke">#DDDDDD</color>           <!-- 输入框描边 -->
+
+    <!-- ==================== 状态色 ==================== -->
+    <color name="success">#4CAF50</color>
+    <color name="error">#F44336</color>
+    <color name="warning">#FF9800</color>
+
+    <!-- ==================== 品牌图标 ==================== -->
+    <color name="kx_icon_bg">#FEFFFF</color>   <!-- KaguraX launcher 背景（取自定义图标四角延伸色） -->
+
+    <!-- ==================== 夜间模式 ==================== -->
+    <color name="bg_night">#121212</color>
+    <color name="card_night">#1E1E1E</color>
+    <color name="text_primary_night">#E0E0E0</color>
+    <color name="text_secondary_night">#9E9E9E</color>
+    <color name="divider_night">#333333</color>
+    <color name="input_bg_night">#2A2A2A</color>
+    <color name="stroke_night">#444444</color>
+    <color name="primary_night">#5C6BC0</color>    <!-- Indigo 400：夜间主色提亮 -->
+
+</resources>

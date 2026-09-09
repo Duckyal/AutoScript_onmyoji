@@ -1,0 +1,263 @@
+plugins {
+    id "com.android.application"
+}
+
+ext {
+    // The packageVariant defines the bootstrap variant that will be included in the app APK.
+    // This must be supported by com.termux.shared.termux.TermuxBootstrap.PackageVariant or app will
+    // crash at startup.
+    // Bootstrap of a different variant must not be manually installed by the user after app installation
+    // by replacing $PREFIX since app code is dependant on the variant used to build the APK.
+    // Currently supported values are: [ "apt-android-7" "apt-android-5" ]
+    packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7" // Default: "apt-android-7"
+}
+
+android {
+    // namespace 保持官方 "com.termux"（决定 R 类与 Java 包路径，官方 fork 不改）；
+    // applicationId 改为我们的包名（决定安装后的应用标识）。
+    // 数据目录 /data/data/<applicationId> 由 TermuxConstants.TERMUX_PACKAGE_NAME 驱动。
+    namespace "com.termux"
+
+    compileSdkVersion project.properties.compileSdkVersion.toInteger()
+    ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: project.properties.ndkVersion
+    def appVersionName = System.getenv("TERMUX_APP_VERSION_NAME") ?: ""
+    def apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: ""
+    def splitAPKsForDebugBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_DEBUG_BUILDS") ?: "1"
+    def splitAPKsForReleaseBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS") ?: "0" // F-Droid does not support split APKs #1904
+
+    dependencies {
+        implementation "androidx.annotation:annotation:1.9.0"
+        implementation "androidx.core:core:1.13.1"
+        implementation "androidx.drawerlayout:drawerlayout:1.2.0"
+        implementation "androidx.preference:preference:1.2.1"
+        implementation "androidx.viewpager:viewpager:1.0.0"
+        implementation "com.google.android.material:material:1.12.0"
+        implementation "com.google.guava:guava:24.1-jre"
+        implementation "io.noties.markwon:core:$markwonVersion"
+        implementation "io.noties.markwon:ext-strikethrough:$markwonVersion"
+        implementation "io.noties.markwon:linkify:$markwonVersion"
+        implementation "io.noties.markwon:recycler:$markwonVersion"
+        implementation 'com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava'
+
+        implementation project(":terminal-view")
+        implementation project(":termux-shared")
+    }
+
+    defaultConfig {
+        // 应用包名（applicationId）：与 TermuxConstants.TERMUX_PACKAGE_NAME 保持一致，
+        // 决定 APK 安装后的包名与 /data/data/<package> 数据目录。
+        applicationId "duckyal.KaguraX"
+        minSdkVersion project.properties.minSdkVersion.toInteger()
+        targetSdkVersion project.properties.targetSdkVersion.toInteger()
+        // 版本号体系：0.118.0 是上游 Termux 的遗留版本号，本项目自己的发布版本必须
+        // 与 GitHub Release tag 的数字部分一致，否则「检查更新」会把本地版本与
+        // tag 归一化(UpdateChecker.normalizeVersion, 如 app-v1.0 → 1.0.0)比较，
+        // 本地 0.118.0 > 远端 1.0.0 会永远误报「有新 APK」。
+        // 发新版 APK 时：versionCode 必须递增(Android 覆盖安装要求)，versionName
+        // 与 Release tag 一致；也可用环境变量 TERMUX_APP_VERSION_NAME 覆盖。
+        versionCode 124
+        versionName "1.1.1"
+
+        if (appVersionName) versionName = appVersionName
+        validateVersionName(versionName)
+
+        buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by TermuxApplication class
+
+        manifestPlaceholders.TERMUX_PACKAGE_NAME = "duckyal.KaguraX"
+        manifestPlaceholders.TERMUX_APP_NAME = "KaguraX"
+        manifestPlaceholders.TERMUX_API_APP_NAME = "Termux:API"
+        manifestPlaceholders.TERMUX_BOOT_APP_NAME = "Termux:Boot"
+        manifestPlaceholders.TERMUX_FLOAT_APP_NAME = "Termux:Float"
+        manifestPlaceholders.TERMUX_STYLING_APP_NAME = "Termux:Styling"
+        manifestPlaceholders.TERMUX_TASKER_APP_NAME = "Termux:Tasker"
+        manifestPlaceholders.TERMUX_WIDGET_APP_NAME = "Termux:Widget"
+
+        externalNativeBuild {
+            ndkBuild {
+                cFlags "-std=c11", "-Wall", "-Wextra", "-Werror", "-Os", "-fno-stack-protector", "-Wl,--gc-sections"
+            }
+        }
+
+        splits {
+            abi {
+                enable ((gradle.startParameter.taskNames.any { it.contains("Debug") } && splitAPKsForDebugBuilds == "1") ||
+                    (gradle.startParameter.taskNames.any { it.contains("Release") } && splitAPKsForReleaseBuilds == "1"))
+                reset ()
+                // 默认仅打包 arm64-v8a；设置环境变量 TERMUX_TEST_ABIS=x86_64 可追加
+                // 测试架构（用于在 x86_64 redroid 模拟器上实测初始化流程）。
+                def testAbis = []
+                if (System.getenv("TERMUX_TEST_ABIS") != null) {
+                    System.getenv("TERMUX_TEST_ABIS").split(",").each { testAbis << it }
+                }
+                def abiList = (["arm64-v8a"] + testAbis).unique()
+                include abiList as String[]
+                universalApk false
+            }
+        }
+    }
+
+    signingConfigs {
+        debug {
+            storeFile file('testkey_untrusted.jks')
+            keyAlias 'alias'
+            storePassword 'xrj45yWGLbsO7W0v'
+            keyPassword 'xrj45yWGLbsO7W0v'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources false // Reproducible builds
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+
+        debug {
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        // Flag to enable support for the new language APIs
+        coreLibraryDesugaringEnabled true
+
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    externalNativeBuild {
+        ndkBuild {
+            path "src/main/cpp/Android.mk"
+        }
+    }
+
+    lint {
+        disable 'ProtectedPermissions'
+    }
+
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            if (variant.buildType.name == "debug") {
+                def abi = output.getFilter(com.android.build.OutputFile.ABI)
+                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "debug") + "_" + (abi ? abi : "universal") + ".apk")
+            } else if (variant.buildType.name == "release") {
+                def abi = output.getFilter(com.android.build.OutputFile.ABI)
+                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "release") + "_" + (abi ? abi : "universal") + ".apk")
+            }
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+}
+
+dependencies {
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "org.robolectric:robolectric:4.10"
+    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.1.5"
+}
+
+task versionName {
+    doLast {
+        print android.defaultConfig.versionName
+    }
+}
+
+def validateVersionName(String versionName) {
+    // https://semver.org/spec/v2.0.0.html#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
+    // ^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$
+    if (!java.util.regex.Pattern.matches("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?\$", versionName))
+        throw new GradleException("The versionName '"  + versionName + "' is not a valid version as per semantic version '2.0.0' spec in the format 'major.minor.patch(-prerelease)(+buildmetadata)'. https://semver.org/spec/v2.0.0.html.")
+}
+
+def downloadBootstrap(String arch, String expectedChecksum, String version) {
+    def digest = java.security.MessageDigest.getInstance("SHA-256")
+
+    def localUrl = "src/main/cpp/bootstrap-" + arch + ".zip"
+    def file = new File(projectDir, localUrl)
+    if (file.exists()) {
+        def buffer = new byte[8192]
+        def input = new FileInputStream(file)
+        while (true) {
+            def readBytes = input.read(buffer)
+            if (readBytes < 0) break
+            digest.update(buffer, 0, readBytes)
+        }
+        def checksum = new BigInteger(1, digest.digest()).toString(16)
+        while (checksum.length() < 64) { checksum = "0" + checksum }
+        if (checksum == expectedChecksum) {
+            return
+        } else {
+            logger.quiet("Deleting old local file with wrong hash: " + localUrl + ": expected: " + expectedChecksum + ", actual: " + checksum)
+            file.delete()
+        }
+    }
+
+    // 直连 GitHub 在部分网络环境下不可用，统一走镜像前缀（保持 checksum 校验逻辑不变）
+    def remoteUrl = "https://ghfast.top/https://github.com/termux/termux-packages/releases/download/bootstrap-" + version + "/bootstrap-" + arch + ".zip"
+    logger.quiet("Downloading " + remoteUrl + " ...")
+
+    file.parentFile.mkdirs()
+    def out = new BufferedOutputStream(new FileOutputStream(file))
+
+    def connection = new URL(remoteUrl).openConnection()
+    connection.setInstanceFollowRedirects(true)
+    def digestStream = new java.security.DigestInputStream(connection.inputStream, digest)
+    out << digestStream
+    out.close()
+
+    def checksum = new BigInteger(1, digest.digest()).toString(16)
+    while (checksum.length() < 64) { checksum = "0" + checksum }
+    if (checksum != expectedChecksum) {
+        file.delete()
+        throw new GradleException("Wrong checksum for " + remoteUrl + ": expected: " + expectedChecksum + ", actual: " + checksum)
+    }
+}
+
+clean {
+    doLast {
+        def tree = fileTree(new File(projectDir, 'src/main/cpp'))
+        tree.include 'bootstrap-*.zip'
+        tree.each { it.delete() }
+    }
+}
+
+task downloadBootstraps() {
+    doLast {
+        def packageVariant = project.ext.packageVariant
+        if (packageVariant == "apt-android-7") {
+            def version = "2026.02.12-r1" + "%2B" + "apt.android-7"
+            downloadBootstrap("aarch64", "ea2aeba8819e517db711f8c32369e89e7c52cee73e07930ff91185e1ab93f4f3", version)
+            downloadBootstrap("arm", "a38f4d3b2f735f83be2bf54eff463e86dc32a3e2f9f861c1557c4378d249c018", version)
+            downloadBootstrap("i686", "f5bc0b025b9f3b420b5fcaeefc064f888f5f22a0d6fd7090f4aac0c33eb3555b", version)
+            downloadBootstrap("x86_64", "b7fd0f2e3a4de534be3144f9f91acc768630fc463eaf134ab2e64c545e834f7a", version)
+        } else if (packageVariant == "apt-android-5") {
+            def version = "2022.04.28-r6" + "+" + packageVariant
+            downloadBootstrap("aarch64", "913609d439415c828c5640be1b0561467e539cb1c7080662decaaca2fb4820e7", version)
+            downloadBootstrap("arm", "26bfb45304c946170db69108e5eb6e3641aad751406ce106c80df80cad2eccf8", version)
+            downloadBootstrap("i686", "46dcfeb5eef67ba765498db9fe4c50dc4690805139aa0dd141a9d8ee0693cd27", version)
+            downloadBootstrap("x86_64", "615b590679ee6cd885b7fd2ff9473c845e920f9b422f790bb158c63fe42b8481", version)
+        } else {
+            throw new GradleException("Unsupported TERMUX_PACKAGE_VARIANT \"" + packageVariant + "\"")
+        }
+    }
+}
+
+afterEvaluate {
+    android.applicationVariants.all { variant ->
+        variant.javaCompileProvider.get().dependsOn(downloadBootstraps)
+    }
+}

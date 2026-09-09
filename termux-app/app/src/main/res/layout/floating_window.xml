@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 无壳悬浮遥控窗：纯页面，无标题栏/边框/圆角/阴影。
+     根视图为顶层类 FloatPanelRoot（必须是顶层类，LayoutInflater 反射的类名不含“$”）：
+     在窗口内容层最顶层拦截系统返回键/返回手势（网页可后退则先后退，无历史则收起小窗）。
+     窗口尺寸固定且不可拖动，因此没有底部拖条，WebView 铺满整窗。 -->
+<com.termux.app.FloatPanelRoot xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <WebView
+        android:id="@+id/floating_webview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+</com.termux.app.FloatPanelRoot>

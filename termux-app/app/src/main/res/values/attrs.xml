@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <attr name="termuxActivityDrawerBackground" format="reference" />
+    <attr name="termuxActivityDrawerImageTint" format="reference" />
+
+    <!-- ==================== 项目管理器主界面自定义属性（昼夜自适应） ==================== -->
+    <!-- 页面背景 -->
+    <attr name="mainPageBackground" format="color" />
+    <!-- 卡片表面背景 -->
+    <attr name="mainCardBackground" format="color" />
+    <!-- 输入框填充色与描边色 -->
+    <attr name="mainInputBackground" format="color" />
+    <attr name="mainInputStroke" format="color" />
+    <!-- 主/次文本颜色 -->
+    <attr name="mainTextPrimary" format="color" />
+    <attr name="mainTextSecondary" format="color" />
+    <!-- 分隔线 -->
+    <attr name="mainDivider" format="color" />
+</resources>

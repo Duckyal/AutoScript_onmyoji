@@ -5,6 +5,6 @@ __pycache__/
 *.pyd
 .venv/
 .vscode/
-termux-app/
+.codebuddy/
 
 email-api

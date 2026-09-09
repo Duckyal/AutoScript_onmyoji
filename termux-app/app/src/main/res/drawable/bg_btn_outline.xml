@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 描边按钮背景：主色描边圆角 + 水波涟漪（昼夜自动跟随 ?attr/colorPrimary） -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/primary_alpha">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <stroke
+                android:width="2dp"
+                android:color="?attr/colorPrimary" />
+            <corners android:radius="22dp" />
+        </shape>
+    </item>
+</ripple>
