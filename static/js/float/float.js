@@ -317,7 +317,7 @@ const FloatApp = {
     }
   },
 
-  /* ==================== 任务来源：/home 任务面板（排除自定义） ==================== */
+  /* ==================== 任务来源：/home 任务面板 ==================== */
   async loadTaskSchemas() {
     if (this._metaLoading) return;   // 防并发重复抓取
     this._metaLoading = true;
@@ -345,14 +345,12 @@ const FloatApp = {
     }
   },
 
-  /** 解析 /home 页的 .task-panel → [{task,label,fields}]，排除自定义任务面板 */
+  /** 解析 /home 页的 .task-panel → [{task,label,fields}] */
   parseHomePanels(html) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const out = [];
     doc.querySelectorAll('#contentMain .task-panel').forEach(panel => {
       const task = (panel.id || '').replace(/^panel-/, '');
-      if (!task || task === this.CUSTOM_TASK) return;   // 排除自定义
-
       const fields = [];
       // label[for] 直接定位同组控件（home 面板各 label 的 for 均已指向存在的控件 id）
       panel.querySelectorAll('.form-group label.form-label[for]').forEach(lbl => {
