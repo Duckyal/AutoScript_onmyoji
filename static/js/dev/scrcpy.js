@@ -326,15 +326,18 @@ function checkOrientation() {
 
 checkOrientation();
 let isDrawing = false;
-let isSwiping = false;          // 非截图模式下的手绘滑动状态
-let swipePath = [];             // 手绘轨迹点数组（设备真实坐标 {x, y}）
-const SWIPE_MIN_POINT_DIST = 5; // 轨迹采样最小间距（设备坐标 px），小于此距离不记录
+let isSwiping = false;          // 非截图模式下实时手势进行中（按下 → 移动 → 抬起）
+const GESTURE_MIN_MOVE = 2;     // 设备坐标：实时手势最小移动步长，滤除鼠标/触摸抖动
 let startX = 0, startY = 0;
 let startClientX = 0, startClientY = 0;
 let croppedBlob = null;
-let mouseDownTime = 0;
-let mouseDownCoords = {x: 0, y: 0};
-const LONG_PRESS_MS = 500;  // 无位移且按住超过该时长 → longpress；否则 tap
+
+// ---- 实时手势（拖动遥控）状态机 ----
+// 拖动中不再"采集整条轨迹、松手后回放"，而是把 down/move/up 实时发给设备，做到"按住即跟手"。
+// 为保证事件不乱序：同一时刻只允许一个请求在途（gestureBusy），移动点只保留"最新一个"，
+// 发送间隙产生的新点自动合并，注入速率由网络往返 + 后端触摸锁自然限制。
+let gesture = null;             // 当前手势 {downX,downY,lastX,lastY,pendingX,pendingY,ended,endX,endY}
+let gestureBusy = false;
 
 let deviceResolution = { width: 0, height: 0 };
 
@@ -426,6 +429,101 @@ function getRealCoords(clientX, clientY) {
     return { x: realX, y: realY };
 }
 
+// =================== 实时手势发送 ===================
+async function postGesture(action, x, y) {
+    const formData = new FormData();
+    formData.append('device_name', deviceName);
+    formData.append('action', action);
+    formData.append('x1', Math.round(x));
+    formData.append('y1', Math.round(y));
+    const res = await fetch('/api/input', { method: 'POST', body: formData });
+    if (!res.ok) throw new Error(`${action} HTTP ${res.status}`);
+    return res;
+}
+
+const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+/** 手势开始（按下）。立即触发泵发送 gesture_down。 */
+function gestureStart(x, y) {
+    if (gesture) return;   // 防御：理论不会出现
+    gesture = { downX: x, downY: y, lastX: x, lastY: y, pendingX: null, pendingY: null, ended: false, endX: x, endY: y };
+    gesturePump();
+}
+
+/** 手势移动（拖动过程高频调用）：只记录最新坐标，由泵限速发送。 */
+function gestureMove(x, y) {
+    const g = gesture;
+    if (!g || g.ended) return;
+    const dx = x - g.lastX, dy = y - g.lastY;
+    if (dx * dx + dy * dy < GESTURE_MIN_MOVE * GESTURE_MIN_MOVE) return;
+    g.lastX = x;
+    g.lastY = y;
+    g.pendingX = x;   // 只保留最新未发送点
+    g.pendingY = y;
+}
+
+/** 手势结束（松手）：发掉残留点并 gesture_up。 */
+function gestureEnd(x, y) {
+    const g = gesture;
+    if (!g || g.ended) return;
+    g.ended = true;
+    g.endX = x;
+    g.endY = y;
+    gesturePump();
+}
+
+/** 手势异常取消（touchcancel 等）：按最后位置直接抬起，避免设备端卡在按住状态。 */
+function gestureCancel() {
+    isSwiping = false;
+    const g = gesture;
+    if (!g || g.ended) return;
+    g.ended = true;
+    g.endX = g.lastX;
+    g.endY = g.lastY;
+    gesturePump();
+}
+
+/**
+ * 手势泵：串行消费 按下 → 移动(最新点) → 抬起。
+ * 同一时刻至多一个请求在途，从根源上保证 down/move/up 严格按序到达后端。
+ */
+async function gesturePump() {
+    if (gestureBusy) return;
+    gestureBusy = true;
+    try {
+        const g = gesture;
+        if (!g) return;
+        try {
+            await postGesture('gesture_down', g.downX, g.downY);
+            // 移动循环：有最新点就发，没有就空转等新事件
+            while (gesture === g && !g.ended) {
+                if (g.pendingX !== null) {
+                    const px = g.pendingX, py = g.pendingY;
+                    g.pendingX = g.pendingY = null;
+                    await postGesture('gesture_move', px, py);
+                } else {
+                    await _sleep(3);
+                }
+            }
+            if (gesture === g) {
+                if (g.pendingX !== null) {
+                    await postGesture('gesture_move', g.pendingX, g.pendingY);
+                    g.pendingX = g.pendingY = null;
+                }
+                await postGesture('gesture_up', g.endX, g.endY);
+            }
+        } catch (err) {
+            // 中途失败：尽力抬起，防止设备端一直处于按下状态
+            console.error('实时手势中断:', err);
+            try { await postGesture('gesture_up', g.lastX, g.lastY); } catch (_) { /* 忽略 */ }
+        } finally {
+            if (gesture === g) gesture = null;
+        }
+    } finally {
+        gestureBusy = false;
+    }
+}
+
 /**
  * 截取当前帧的指定区域为 PNG blob
  * - scrcpy 模式：直接从 stream-canvas 截取（无网络请求，零延迟）
@@ -507,9 +605,6 @@ streamContainer.addEventListener('mousedown', (e) => {
     }
     if (e.button !== 0) return;
 
-    mouseDownTime = Date.now();
-    mouseDownCoords = getRealCoords(e.clientX, e.clientY);
-
     if (screenshotMode.checked) {
         isDrawing = true;
         startClientX = e.clientX;
@@ -528,9 +623,10 @@ streamContainer.addEventListener('mousedown', (e) => {
         overlay.style.height = '0px';
         overlay.style.display = 'block';
     } else {
-        // 非截图模式：开始采集手绘滑动轨迹（起点先入数组，t=0 相对按下时刻）
+        // 非截图模式：实时手势开始——立即把"按下"发给设备（按住即跟手）
         isSwiping = true;
-        swipePath = [{ x: mouseDownCoords.x, y: mouseDownCoords.y, t: 0 }];
+        const c = getRealCoords(e.clientX, e.clientY);
+        gestureStart(c.x, c.y);
     }
 });
 
@@ -555,14 +651,9 @@ streamContainer.addEventListener('mousemove', (e) => {
     }
     if (!isSwiping) return;
 
-    // 采集手绘轨迹点（真实设备坐标），按最小距离过滤，避免点过密
+    // 实时拖动：把最新坐标交给泵发送（move 为绝对坐标，泵会自动合并过快的新点）
     const c = getRealCoords(e.clientX, e.clientY);
-    const last = swipePath[swipePath.length - 1];
-    const dx = c.x - last.x;
-    const dy = c.y - last.y;
-    if (dx * dx + dy * dy < SWIPE_MIN_POINT_DIST * SWIPE_MIN_POINT_DIST) return;
-    // 记录相对按下时刻的时间戳，后端按真实耗时逐段回放（长按拖动=按住期间无点，回放时自然停留）
-    swipePath.push({ x: c.x, y: c.y, t: Date.now() - mouseDownTime });
+    gestureMove(c.x, c.y);
 });
 
 streamContainer.addEventListener('mouseup', async (e) => {
@@ -585,26 +676,26 @@ streamContainer.addEventListener('mouseup', async (e) => {
         performCrop(realX, realY, cropW, cropH, () => {});
 
     } else if (isSwiping) {
+        // 实时手势结束：松手 → 抬起（点击/长按也在此表达：按下后停留多久，设备就按多久再抬起）
         isSwiping = false;
-        const endCoords = getRealCoords(e.clientX, e.clientY);
-        const duration = Date.now() - mouseDownTime;
-        const distX = Math.abs(endCoords.x - mouseDownCoords.x);
-        const distY = Math.abs(endCoords.y - mouseDownCoords.y);
+        const c = getRealCoords(e.clientX, e.clientY);
+        gestureEnd(c.x, c.y);
+    }
+});
 
-        if (distX < 15 && distY < 15) {
-            // 无位移 → tap / longpress
-            sendInputAction(endCoords, duration, distX, distY);
-        } else {
-            // 有位移：统一走带时间戳的轨迹回放——快速拖动/长按拖动都按真实耗时逐段回放
-            // 确保终点纳入轨迹（最后一次采样可能被最小距离过滤掉），并补上真实时间戳
-            const last = swipePath[swipePath.length - 1];
-            if (last.x !== endCoords.x || last.y !== endCoords.y) {
-                swipePath.push({ x: endCoords.x, y: endCoords.y, t: duration });
-            } else {
-                last.t = duration;
-            }
-            sendSwipePath(swipePath);
-        }
+// 兜底：按住拖出画面/在窗口外松手时结束手势，防止设备端一直处于按下状态
+streamContainer.addEventListener('mouseleave', (e) => {
+    if (isSwiping && (e.buttons & 1) === 0) {
+        isSwiping = false;
+        const c = getRealCoords(e.clientX, e.clientY);
+        gestureEnd(c.x, c.y);
+    }
+});
+window.addEventListener('mouseup', (e) => {
+    if (isSwiping) {
+        isSwiping = false;
+        const c = getRealCoords(e.clientX, e.clientY);
+        gestureEnd(c.x, c.y);
     }
 });
 
@@ -612,9 +703,6 @@ streamContainer.addEventListener('mouseup', async (e) => {
 streamContainer.addEventListener('touchstart', (e) => {
     e.preventDefault();
     const touch = e.touches[0];
-    
-    mouseDownTime = Date.now();
-    mouseDownCoords = getRealCoords(touch.clientX, touch.clientY);
 
     if (screenshotMode.checked) {
         isDrawing = true;
@@ -634,9 +722,10 @@ streamContainer.addEventListener('touchstart', (e) => {
         overlay.style.height = '0px';
         overlay.style.display = 'block';
     } else {
-        // 非截图模式：开始采集手绘滑动轨迹（起点先入数组，t=0 相对按下时刻）
+        // 非截图模式：实时手势开始——立即把"按下"发给设备
         isSwiping = true;
-        swipePath = [{ x: mouseDownCoords.x, y: mouseDownCoords.y, t: 0 }];
+        const c = getRealCoords(touch.clientX, touch.clientY);
+        gestureStart(c.x, c.y);
     }
 }, { passive: false });
 
@@ -664,15 +753,10 @@ streamContainer.addEventListener('touchmove', (e) => {
     if (!isSwiping) return;
     e.preventDefault();
 
-    // 采集手绘轨迹点（真实设备坐标），按最小距离过滤
+    // 实时拖动：把最新坐标交给泵发送
     const touch = e.touches[0];
     const c = getRealCoords(touch.clientX, touch.clientY);
-    const last = swipePath[swipePath.length - 1];
-    const dx = c.x - last.x;
-    const dy = c.y - last.y;
-    if (dx * dx + dy * dy < SWIPE_MIN_POINT_DIST * SWIPE_MIN_POINT_DIST) return;
-    // 记录相对按下时刻的时间戳，后端按真实耗时逐段回放（长按拖动=按住期间无点，回放时自然停留）
-    swipePath.push({ x: c.x, y: c.y, t: Date.now() - mouseDownTime });
+    gestureMove(c.x, c.y);
 }, { passive: false });
 
 streamContainer.addEventListener('touchend', async (e) => {
@@ -696,65 +780,17 @@ streamContainer.addEventListener('touchend', async (e) => {
         performCrop(realX, realY, cropW, cropH, () => {});
 
     } else if (isSwiping) {
+        // 实时手势结束：松手 → 抬起
         isSwiping = false;
-        const endCoords = getRealCoords(touch.clientX, touch.clientY);
-        const duration = Date.now() - mouseDownTime;
-        const distX = Math.abs(endCoords.x - mouseDownCoords.x);
-        const distY = Math.abs(endCoords.y - mouseDownCoords.y);
-
-        if (distX < 15 && distY < 15) {
-            // 无位移 → tap / longpress
-            sendInputAction(endCoords, duration, distX, distY);
-        } else {
-            // 有位移：统一走带时间戳的轨迹回放——快速拖动/长按拖动都按真实耗时逐段回放
-            const last = swipePath[swipePath.length - 1];
-            if (last.x !== endCoords.x || last.y !== endCoords.y) {
-                swipePath.push({ x: endCoords.x, y: endCoords.y, t: duration });
-            } else {
-                last.t = duration;
-            }
-            sendSwipePath(swipePath);
-        }
+        const c = getRealCoords(touch.clientX, touch.clientY);
+        gestureEnd(c.x, c.y);
     }
 }, { passive: false });
 
-/** 将手绘轨迹点发送到后端 /api/input（action=swipe_path）执行曲线滑动 */
-function sendSwipePath(path) {
-    if (!path || path.length < 2) return;
-    const points = path.map(p => [p.x, p.y, p.t ?? 0]);
-    const formData = new FormData();
-    formData.append('device_name', deviceName);
-    formData.append('action', 'swipe_path');
-    formData.append('points', JSON.stringify(points));
-    formData.append('delay', '0');   // 0 = 不额外 sleep，回放只受 touch.move 网络耗时限制，最跟手
-    fetch('/api/input', { method: 'POST', body: formData }).catch(err => console.error('曲线滑动发送失败:', err));
-}
-
-function sendInputAction(endCoords, duration, distX, distY) {
-    const formData = new FormData();
-    formData.append('device_name', deviceName);
-
-    if (distX < 15 && distY < 15) {
-        if (duration >= LONG_PRESS_MS) {
-            formData.append('action', 'longpress');
-            formData.append('x1', mouseDownCoords.x);
-            formData.append('y1', mouseDownCoords.y);
-            formData.append('duration', duration);
-        } else {
-            formData.append('action', 'tap');
-            formData.append('x1', mouseDownCoords.x);
-            formData.append('y1', mouseDownCoords.y);
-        }
-    } else {
-        formData.append('action', 'swipe');
-        formData.append('x1', mouseDownCoords.x);
-        formData.append('y1', mouseDownCoords.y);
-        formData.append('x2', endCoords.x);
-        formData.append('y2', endCoords.y);
-        // 前端有位移的拖动统一走 swipe_path（带时间戳回放），此分支仅作兜底，不携带 hold
-    }
-    fetch('/api/input', { method: 'POST', body: formData });
-}
+// 触摸被系统打断（来电/手势/滚动）时按当前位置结束手势，避免设备端卡在按住状态
+streamContainer.addEventListener('touchcancel', () => {
+    gestureCancel();
+}, { passive: false });
 
 saveBtn.addEventListener('click', async () => {
     if (!croppedBlob) { alert('请先框选截图或上传图片'); return; }

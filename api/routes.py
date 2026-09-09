@@ -22,8 +22,9 @@ from module.adb import ADB  # 你原有的 ADB 类
 # ===============================================================================================================================
 # --- 设备与流 ---
 @router.get("/api/get_devices")
-async def api_get_devices():
-    return {"devices": adb_stream.get_devices()}
+async def api_get_devices(hint: str = ""):
+    # hint: 前端最近使用的设备地址，供无线调试掉线时自动 adb connect 拉回
+    return {"devices": adb_stream.get_devices(hint.strip() or None)}
 
 @router.get("/api/stream_status")
 def get_stream_status(device_name: str = None):
@@ -125,6 +126,15 @@ async def handle_input(
         elif action == "swipe":
             # duration(毫秒) 转秒作为 hold：按下后先停留再滑动（支持前端"长按拖动"，按住不松）
             await asyncio.to_thread(device.滑动, x1, y1, x2, y2, hold=duration / 1000.0)
+        elif action in ("gesture_down", "gesture_move", "gesture_up"):
+            # 实时手势流（dev 页拖动遥控用）：按下/移动/抬起分多次独立请求发送，
+            # 服务端同一设备由触摸锁串行执行，保证顺序与手势完整性
+            if action == "gesture_down":
+                await asyncio.to_thread(device.触摸按下, x1, y1)
+            elif action == "gesture_move":
+                await asyncio.to_thread(device.触摸移动, x1, y1)
+            else:
+                await asyncio.to_thread(device.触摸抬起, x1, y1)
         elif action == "swipe_path":
             try:
                 pts = json.loads(points) if points else []

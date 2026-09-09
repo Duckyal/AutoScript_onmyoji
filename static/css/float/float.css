@@ -393,6 +393,85 @@ html.env-float .float-brand:active { background: var(--bg-elev); }
   .float-app { padding-left: 8px; padding-right: 8px; }
 }
 
+/* ============ 悬浮窗自绘下拉（仅 env-float） ============
+ * 原生 <select> 在悬浮窗 WebView(系统悬浮窗, 无 Activity 上下文)点不开系统选项
+ * 列表。这里把 select 视觉隐藏，改用按钮 + 页内浮层列表；网页/全屏不受影响。
+ */
+html.env-float .fsel { position: relative; display: flex; width: 100%; min-width: 0; }
+html.env-float .pane__row > .fsel { flex: 1; min-width: 0; }   /* 设备行占满剩余宽度 */
+html.env-float select.fsel-native { display: none !important; }
+
+html.env-float .fsel-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  display: block;
+  width: 100%;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  padding: 10px 30px 10px 12px;          /* 右侧留出箭头空间 */
+  min-height: 42px;
+  cursor: pointer;
+}
+html.env-float .fsel-btn:active { border-color: var(--border-focus); }
+html.env-float .fsel-btn:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+/* 右侧展开箭头 */
+html.env-float .fsel-btn::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-top: -6px;
+  border-right: 2px solid var(--text-dim);
+  border-bottom: 2px solid var(--text-dim);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+html.env-float .fsel-panel {
+  position: fixed;
+  z-index: 9999;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: #22263a;                    /* 实底，保证在视频/桌面上可读 */
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .45);
+  padding: 4px;
+}
+html.env-float .fsel-panel[hidden] { display: none; }
+
+html.env-float .fsel-item {
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+html.env-float .fsel-item:active { background: var(--bg-elev); }
+html.env-float .fsel-item.active { color: var(--accent); font-weight: 600; }
+html.env-float .fsel-item[hidden] { display: none; }
+
 /* ==========================================================================
  * 运行环境差异（<html> 的 class 由 float.html 内联脚本按 UA 判定）：
  *   env-float —— 悬浮窗小窗(UA 带 KaguraXFloat)：紧凑，日志区只露最新一行，

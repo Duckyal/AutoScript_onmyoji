@@ -1,16 +1,38 @@
 import subprocess
+import threading
+import time
 from typing import List, Tuple
+
+# 上次成功发现的无线设备(ip:port)。无线调试掉线后 adb devices 里会变 offline 或消失，
+# 下次查询对已知地址幂等 adb connect 可把设备拉回在线列表（掉线自动恢复）。
+_known_wireless: List[str] = []
+_devices_scan_lock = threading.Lock()
 
 def check_adb(device: str) -> Tuple[bool, str]:
     try:
         if ":" in device:
             result = subprocess.run(
                 ['adb', 'connect', device],
-                capture_output=True, text=True, timeout=5
+                capture_output=True, text=True, timeout=8
             )
             output = result.stdout + result.stderr
-            if 'connected' in output or 'already connected' in output:
+            # 假阳性防护：adb connect 回 "connected to" 只代表 TCP+adb 握手建立，不代表
+            # 设备可用——Android 11+ 下 host 公钥未授权（设备为 unauthorized，被控端应弹
+            # 授权）或 transport 尚未被 adb server 纳管时同样回 connected。故以 adb devices
+            # 中该设备的真实状态为准，connect 文本仅供失败原因展示。
+            state = _device_state(device)
+            if state != 'device':
+                time.sleep(1.0)   # 新连接进入列表 / offline 转 device 需短暂时间
+                state = _device_state(device)
+            if state == 'device':
                 return True, "连接成功"
+            if state == 'unauthorized':
+                return False, "被控端未授权：请在被控端屏幕点「允许 USB 调试/允许」；若没有弹窗，需在被控端重新开启无线调试并再次配对"
+            # offline / 尚未出现在列表
+            if output and ('failed to authenticate' in output or 'unauthorized' in output):
+                return False, "认证失败：开关无线调试后需重新配对"
+            if output and ('connected' in output or 'already connected' in output):
+                return False, "连接未确认：adb 已握手但设备未出现在设备列表，请稍后重试或重新开关无线调试"
             return False, output.strip() or "连接失败"
         else:
             result = subprocess.run(
@@ -27,19 +49,65 @@ def check_adb(device: str) -> Tuple[bool, str]:
     except Exception as e:
         return False, str(e)
 
-def get_devices() -> List[str]:
+
+def _device_state(serial: str) -> str:
+    """查询指定序列号在 adb devices 中的状态；列表里没有时返回空字符串"""
     try:
         result = subprocess.run(
-            ['adb', 'devices'], capture_output=True, text=True, check=True
+            ['adb', 'devices'], capture_output=True, text=True, timeout=5
         )
-        lines = result.stdout.strip().split('\n')
-        devices = []
-        for line in lines[1:]:
-            if line.strip():
-                parts = line.split('\t')
-                if len(parts) >= 2 and parts[1].strip() == 'device':
-                    devices.append(parts[0].strip())
-        return devices
+    except Exception:
+        return ""
+    for line in result.stdout.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] == serial:
+            return parts[1]
+    return ""
+
+def _scan_devices() -> List[str]:
+    """执行 adb devices，返回状态为 device 的序列号列表"""
+    result = subprocess.run(
+        ['adb', 'devices'], capture_output=True, text=True, check=True
+    )
+    lines = result.stdout.strip().split('\n')
+    devices = []
+    for line in lines[1:]:
+        if line.strip():
+            parts = line.split('\t')
+            if len(parts) >= 2 and parts[1].strip() == 'device':
+                devices.append(parts[0].strip())
+    return devices
+
+
+def _adb_connect(serial: str) -> None:
+    """幂等 adb connect：无线设备掉线后用于拉回，失败静默留给下次"""
+    try:
+        subprocess.run(['adb', 'connect', serial],
+                       capture_output=True, text=True, timeout=6)
+    except Exception:
+        pass
+
+
+def get_devices(hint: str = None) -> List[str]:
+    """列出在线 adb 设备。
+
+    - hint: 页面携带的最近使用地址(ip:port)，若不在线先尝试 adb connect 拉回；
+    - 无线调试掉线属常见现象：对上次已知的 ip:port 也会自动幂等重连一次再重扫。
+    """
+    global _known_wireless
+    try:
+        with _devices_scan_lock:
+            if hint:
+                _adb_connect(hint)
+            devices = _scan_devices()
+            # 上次发现的无线设备掉线 → 自动补 connect 后再扫一遍
+            missing = [s for s in _known_wireless if s not in devices and ':' in s]
+            if missing:
+                for serial in missing:
+                    _adb_connect(serial)
+                devices = _scan_devices()
+            _known_wireless = [d for d in devices if ':' in d]
+            return devices
     except FileNotFoundError:
         print("未找到 adb 命令")
         return []

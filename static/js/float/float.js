@@ -10,6 +10,137 @@
  *   没有则用面板默认；也可以直接手改
  * - 运行中：轮询 /api/task_status，大按钮切换为「终止」；WebSocket 订阅最近 1~2 行日志
  */
+
+/* ==================== 悬浮窗自绘下拉（替代原生 <select>） ====================
+ * 现象：悬浮窗 WebView 是系统悬浮窗（无 Activity 弹窗上下文），点原生 <select>
+ *       时 Android 要弹出的系统选择列表无法显示 → 点不开（网页/全屏 WebView 正常）。
+ * 方案：仅悬浮窗环境(UA 带 KaguraXFloat)启用。原生 <select> 视觉隐藏但保留在
+ *       DOM，所有读写在它身上照常进行；外层换成按钮 + 页内 DOM 浮层列表。
+ *       选中会回写 <select>.value 并派发 change，设备切换/依赖联动/参数收集等
+ *       既有逻辑完全不用感知自绘的存在。
+ */
+let __fsel_openRoot = null;   // 同时只展开一个下拉
+
+function __fsel_forceClose() {
+  const r = __fsel_openRoot;
+  if (r && r.dataset.open === '1') {
+    const p = r.querySelector('.fsel-panel');
+    if (p) p.hidden = true;
+    delete r.dataset.open;
+  }
+  __fsel_openRoot = null;
+}
+
+/** 包装原生 select 为自绘下拉；非悬浮窗环境返回 null（保持原生）。返回 { sync, close } */
+function buildFancySelect(select) {
+  if (!select || select.tagName !== 'SELECT') return null;
+  if (!/KaguraXFloat/i.test(navigator.userAgent)) return null;
+  if (select.dataset.fsel) return null;
+  const parent = select.parentNode;
+  if (!parent) return null;
+
+  select.dataset.fsel = '1';
+  select.classList.add('fsel-native');   // 视觉隐藏，但 value/options 仍可正常读写
+
+  const root = document.createElement('div');
+  root.className = 'fsel';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'fsel-btn';
+  const panel = document.createElement('div');
+  panel.className = 'fsel-panel';
+  panel.hidden = true;
+
+  root.appendChild(btn);
+  root.appendChild(panel);
+  parent.insertBefore(root, select);
+  root.appendChild(select);
+
+  function curLabel() {
+    const i = select.selectedIndex;
+    const o = i >= 0 ? select.options[i] : null;
+    return o ? (o.textContent || o.value || '') : '';
+  }
+
+  function buildPanel() {
+    panel.innerHTML = '';
+    Array.from(select.options).forEach(opt => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'fsel-item' + (opt.selected ? ' active' : '');
+      item.hidden = opt.style.display === 'none';   // 依赖联动隐藏的选项同样不可见
+      item.textContent = opt.textContent || opt.value || '';
+      item.addEventListener('click', () => {
+        select.value = opt.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        sync();
+        close();
+      });
+      panel.appendChild(item);
+    });
+  }
+
+  function place() {
+    const r = root.getBoundingClientRect();
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const minW = Math.max(r.width, 170);
+    const left = Math.max(8, Math.min(r.left, vw - minW - 8));
+    panel.style.minWidth = Math.min(minW, vw - 16) + 'px';
+    panel.style.left = left + 'px';
+    const gap = 6;
+    if (vh - r.bottom - gap >= 150) {         // 下方放得下 → 向下展开
+      panel.style.top = (r.bottom + gap) + 'px';
+      panel.style.bottom = 'auto';
+      panel.style.maxHeight = Math.max(120, vh - r.bottom - gap - 4) + 'px';
+    } else {                                  // 否则向上展开
+      panel.style.top = 'auto';
+      panel.style.bottom = (vh - r.top + gap) + 'px';
+      panel.style.maxHeight = Math.max(120, r.top - gap - 4) + 'px';
+    }
+  }
+
+  function open() {
+    __fsel_forceClose();                       // 关掉其它展开的下拉
+    sync();
+    place();
+    panel.hidden = false;
+    root.dataset.open = '1';
+    __fsel_openRoot = root;
+  }
+  function close() {
+    panel.hidden = true;
+    delete root.dataset.open;
+    if (__fsel_openRoot === root) __fsel_openRoot = null;
+  }
+  function sync() {
+    btn.textContent = curLabel();
+    buildPanel();
+  }
+
+  btn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();      // 避免触发原生控件的默认聚焦/点开
+    e.stopPropagation();
+  });
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (root.dataset.open === '1') close(); else open();
+  });
+  select.addEventListener('change', sync);    // 依赖联动等外部改 select 时同步外观
+  sync();
+
+  return { sync, close };
+}
+
+/* 点击下拉以外区域关闭已展开的面板 */
+function __fsel_docClose(e) {
+  if (__fsel_openRoot && __fsel_openRoot.dataset.open === '1' &&
+      !__fsel_openRoot.contains(e.target)) {
+    __fsel_forceClose();
+  }
+}
+document.addEventListener('pointerdown', __fsel_docClose);
+document.addEventListener('click', __fsel_docClose);   // 兼容无 Pointer Events 的旧 WebView
+
 const FloatApp = {
   PAGE_DEVICE: (window.PAGE_DEVICE || '').trim(),
   device: '',
@@ -58,6 +189,13 @@ const FloatApp = {
       toast: document.getElementById('toast')
     };
 
+    // 悬浮窗(WebView 浮层)里原生 <select> 弹不出系统选择列表 → 自绘下拉
+    if (this.isFloatEnv && this.els.deviceSel) {
+      this.deviceFsel = buildFancySelect(this.els.deviceSel);
+    }
+    // 设备下拉变化统一走 onDeviceChange（loadDevices 载入后也会主动触发一次）
+    this.els.deviceSel.addEventListener('change', () => this.onDeviceChange());
+
     this.els.deviceRefreshBtn.addEventListener('click', () => this.refreshDevices());
     this.els.actionBtn.addEventListener('click', () => this.onActionClick());
 
@@ -77,7 +215,13 @@ const FloatApp = {
   async loadDevices() {
     this.els.deviceRefreshBtn.classList.add('spinning');
     try {
-      const resp = await fetch('/api/get_devices', { cache: 'no-store' });
+      // 带上最近使用的设备地址作 hint：无线设备若掉线，后端会据此幂等 adb connect 拉回
+      let hint = this.PAGE_DEVICE;
+      if (!hint) {
+        try { hint = localStorage.getItem('onmyoji:float:device') || ''; } catch (e) { hint = ''; }
+      }
+      const q = hint ? '?hint=' + encodeURIComponent(hint) : '';
+      const resp = await fetch('/api/get_devices' + q, { cache: 'no-store' });
       const data = await resp.json();
       this.devices = (data && data.devices) || [];
     } catch (e) {
@@ -113,6 +257,7 @@ const FloatApp = {
       target = this.devices[0] || '';
     }
     sel.value = target;
+    if (this.deviceFsel) this.deviceFsel.sync();   // 同步自绘下拉的显示值与选项
     this.onDeviceChange();
   },
 
@@ -383,6 +528,11 @@ const FloatApp = {
       row.appendChild(wrap);
       body.appendChild(row);
 
+      // 悬浮窗里原生 select 点不开系统列表 → 改用自绘下拉（ctl 仍留在 DOM 供读写）
+      if (f.kind === 'select' && this.isFloatEnv) {
+        ctl.fs = buildFancySelect(ctl);
+      }
+
       this._fields.push({ field: f, ctl });
     });
 
@@ -411,6 +561,8 @@ const FloatApp = {
       if (!allowed.includes(current)) {
         ctl.value = allowed[0] || '';
       }
+      // 同步自绘下拉（悬浮窗）中可见项与当前值
+      if (ctl.fs) ctl.fs.sync();
     });
   },
 

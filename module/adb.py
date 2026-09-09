@@ -8,9 +8,11 @@ import numpy as np
 import os
 import time 
 import re
+import subprocess
 
 from concurrent.futures import ThreadPoolExecutor
 import threading
+from contextlib import contextmanager
 
 
 class _ScaledMainPool:
@@ -126,18 +128,20 @@ class ADB():
         # ORB 检测器缓存，避免重复初始化
         self._orb_detector = None
         self._orb_bf_matcher = None
-        
+
         # 模板金字塔缓存，预先计算多个缩放级别的模板
         self._pyramid_cache = {}
-        
+
+        # 触摸/点击串行锁 + u2 连接时间戳：
+        # 1) 同一设备所有触摸/点击动作串行，避免 down/move/up 被不同来源交错；
+        # 2) 距上次连接超时后自动重建，避免长跑后 u2 会话"静默失效"（指令 200 但设备无反应）。
+        self._touch_lock = threading.Lock()
+        self._touch_connected_at = 0.0
+        self._touch_refresh_sec = 60.0
+
         try:
-            if device_id == "None":
-                self.d = u2.connect()
-            elif ':' not in device_id and device_id.isdigit():
-                self.d = u2.connect(f'127.0.0.1:{device_id}')
-            else:
-                self.d = u2.connect(device_id)
-                
+            self.d = self._u2_connect()
+            self._touch_connected_at = time.time()
             self.engine = RapidOCR()
 
             # 标记当前这个实例已经初始化完毕
@@ -153,6 +157,70 @@ class ADB():
         # 获取并更新设备分辨率(竖屏状态)
         self.width, self.height = self.d.window_size()
         self.log(f'设备初始化完成: 宽:{self.width}, 高:{self.height}', 'debug')
+
+    # ============================================================================================
+    # u2 连接管理 + 实时手势
+    # 长时间运行后 uiautomator 会话会"静默失效"（touch 调用返回成功但设备端无响应），
+    # 因此在触摸/点击前若距上次连接超过阈值则重建连接；同一设备的触摸/点击用一把锁串行，
+    # 保证 down/move/up 手势序列完整不被不同来源交错。
+    # ============================================================================================
+
+    def _adb_ensure_online(self):
+        """adb 传输层兜底：无线(ip:port)在 u2 建连前先幂等 adb connect，
+        避免 u2 建连撞上 adb server 里的瞬时断线/offline 状态"""
+        if ':' not in self.device_id:
+            return
+        try:
+            subprocess.run(['adb', 'connect', self.device_id],
+                           capture_output=True, text=True, timeout=6)
+        except Exception:
+            pass
+
+    def _u2_connect(self):
+        """按设备ID建立新的 uiautomator2 连接（无线网络偶发断线时自动重试）"""
+        if self.device_id == "None":
+            return u2.connect()
+        if ':' not in self.device_id and self.device_id.isdigit():
+            target = f'127.0.0.1:{self.device_id}'
+        else:
+            target = self.device_id
+        last_err = None
+        for attempt in range(3):
+            try:
+                self._adb_ensure_online()
+                return u2.connect(target)
+            except Exception as e:
+                last_err = e
+                if attempt < 2:
+                    time.sleep(0.8 * (attempt + 1))
+        raise last_err
+
+    @contextmanager
+    def _touch_guard(self, refresh=True):
+        """获取触摸锁；refresh=True 时若连接超时则先重建 u2 连接。动作序列期间持锁，防止交错。"""
+        self._touch_lock.acquire()
+        try:
+            if refresh and time.time() - self._touch_connected_at >= self._touch_refresh_sec:
+                self.d = self._u2_connect()   # 重建失败会抛异常，锁随后释放
+                self._touch_connected_at = time.time()
+            yield
+        finally:
+            self._touch_lock.release()
+
+    def 触摸按下(self, x: int, y: int):
+        """实时手势：手指按下（拖动手势起点，按需重建连接）"""
+        with self._touch_guard():
+            self.d.touch.down(x, y)
+
+    def 触摸移动(self, x: int, y: int):
+        """实时手势：手指移动到指定坐标（拖动过程高频调用）"""
+        with self._touch_guard(refresh=False):
+            self.d.touch.move(x, y)
+
+    def 触摸抬起(self, x: int, y: int):
+        """实时手势：手指抬起（手势终点）"""
+        with self._touch_guard(refresh=False):
+            self.d.touch.up(x, y)
 
     # 封装module/decorators.py里中断函数的方法
     def sleep(self, seconds: float):
@@ -484,7 +552,8 @@ class ADB():
         els:处理其他无效参数
         '''
         X, Y = x, y
-        self.d.click(X, Y)
+        with self._touch_guard():
+            self.d.click(X, Y)
         self.log('简单点击({0}, {1})'.format(X, Y), 'debug')
         self.重置定时器()
         
@@ -496,9 +565,10 @@ class ADB():
         '''
         # 小半径直接点击中心，不做随机偏移
         if loc <= 3:
-            self.d.touch.down(center_x, center_y)
-            time.sleep(np.random.uniform(0.05, 0.15))
-            self.d.touch.up(center_x, center_y)
+            with self._touch_guard():
+                self.d.touch.down(center_x, center_y)
+                time.sleep(np.random.uniform(0.05, 0.15))
+                self.d.touch.up(center_x, center_y)
             self.log(f'模拟点击({center_x}, {center_y})', 'debug')
             self.重置定时器()
             return
@@ -519,10 +589,11 @@ class ADB():
         Y = int(center_y + offset_y)
 
         # 执行物理触控
-        self.d.touch.down(X, Y)
-        # 短暂延迟模拟人类点击习惯，增加随机性
-        time.sleep(np.random.uniform(0.05, 0.15))
-        self.d.touch.up(X, Y)
+        with self._touch_guard():
+            self.d.touch.down(X, Y)
+            # 短暂延迟模拟人类点击习惯，增加随机性
+            time.sleep(np.random.uniform(0.05, 0.15))
+            self.d.touch.up(X, Y)
 
         self.log(f'模拟点击({X}, {Y})', 'debug')
         self.重置定时器()
@@ -532,10 +603,11 @@ class ADB():
         长按指定坐标，持续时间可选，默认1.5秒
         jitter: 随机时间前后偏移值，默认0.1
         '''
-        self.d.touch.down(x, y)
-        duration += np.random.uniform(-jitter, jitter)
-        time.sleep(duration)
-        self.d.touch.up(x, y)
+        with self._touch_guard():
+            self.d.touch.down(x, y)
+            duration += np.random.uniform(-jitter, jitter)
+            time.sleep(duration)
+            self.d.touch.up(x, y)
         self.log(f'模拟长按({x}, {y})', 'debug')
         self.重置定时器()
 
@@ -548,17 +620,18 @@ class ADB():
         hold: 按下后先停留的时长（单位：秒），用于长按拖动（按住不松再移动），默认 0
         '''
         points = self.bz.trackArray((start_x, start_y), (end_x, end_y), count)['trackArray']
-        # 首先：手指按下
-        self.d.touch.down(start_x, start_y)
-        # 长按拖动：按下后先停留 hold 秒再移动，模拟"按住不松手"再拖动
-        if hold > 0:
-            time.sleep(hold)
-        # 其次：遍历轨迹点进行移动
-        for x, y in points:
-            self.d.touch.move(x, y)
-            time.sleep(delay) 
-        # 最后：手指抬起
-        self.d.touch.up(end_x, end_y)
+        with self._touch_guard():
+            # 首先：手指按下
+            self.d.touch.down(start_x, start_y)
+            # 长按拖动：按下后先停留 hold 秒再移动，模拟"按住不松手"再拖动
+            if hold > 0:
+                time.sleep(hold)
+            # 其次：遍历轨迹点进行移动
+            for x, y in points:
+                self.d.touch.move(x, y)
+                time.sleep(delay)
+            # 最后：手指抬起
+            self.d.touch.up(end_x, end_y)
         self.log('模拟滑动{0} {1} -> {2} {3}'.format(start_x, start_y, end_x, end_y), 'debug')
         self.重置定时器()
 
@@ -576,19 +649,20 @@ class ADB():
             return 0
         n = len(points)
         prev_t = 0.0
-        for i, p in enumerate(points):
-            x, y = int(round(float(p[0]))), int(round(float(p[1])))
-            t = float(p[2]) if len(p) >= 3 and p[2] is not None else i * 20.0
-            if i == 0:
-                self.d.touch.down(x, y)
-            else:
-                dt = (t - prev_t) / 1000
-                if dt > 0:
-                    time.sleep(dt)
-                self.d.touch.move(x, y)
-            prev_t = t
-        end_x, end_y = int(round(float(points[-1][0]))), int(round(float(points[-1][1])))
-        self.d.touch.up(end_x, end_y)
+        with self._touch_guard():
+            for i, p in enumerate(points):
+                x, y = int(round(float(p[0]))), int(round(float(p[1])))
+                t = float(p[2]) if len(p) >= 3 and p[2] is not None else i * 20.0
+                if i == 0:
+                    self.d.touch.down(x, y)
+                else:
+                    dt = (t - prev_t) / 1000
+                    if dt > 0:
+                        time.sleep(dt)
+                    self.d.touch.move(x, y)
+                prev_t = t
+            end_x, end_y = int(round(float(points[-1][0]))), int(round(float(points[-1][1])))
+            self.d.touch.up(end_x, end_y)
         self.log(f'轨迹回放: {n} 个点, 总时长≈{prev_t/1000:.3f}s, ({int(points[0][0])},{int(points[0][1])}) -> ({end_x},{end_y})', 'debug')
         self.重置定时器()
         return n
