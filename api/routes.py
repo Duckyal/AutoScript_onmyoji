@@ -412,20 +412,28 @@ async def run_task(request: Request):
 
 # --- 任务状态查询 ---
 @router.get("/api/task_status")
-def get_task_status(device: str = ""):
+def get_task_status(device: str = "", since_seq: int = 0):
     """查询任务运行状态。
     传 device 查指定设备；不传时返回「是否有任一设备在运行任务」
-    （悬浮球光环据此判断任务执行中，无需感知具体被控设备）。"""
+    （悬浮球光环据此判断任务执行中，无需感知具体被控设备）。
+
+    since_seq：调用方带上「已消费的日志序号」，接口顺带增量返回新日志，
+    供悬浮球在「隐藏成线」时弹日志气泡——复用这条轮询通道即可，
+    不必另建 WebSocket（悬浮小窗 WebView 收起时 onPause，长连接会被挂起）。"""
     if not device:
+        running, name = False, None
         for dev_id in list(task_manager.active_tasks.keys()):
             running, name = task_manager.is_running(dev_id)
             if running:
-                return {"running": True, "task_name": name}
-        return {"running": False, "task_name": None}
-    running, name = task_manager.is_running(device)
+                break
+    else:
+        running, name = task_manager.is_running(device)
+
     return {
         "running": running,
-        "task_name": name
+        "task_name": name,
+        "log_seq": ws_manager.seq,
+        "logs": ws_manager.logs_since(since_seq),
     }
 
 # --- 停止任务 ---

@@ -1,6 +1,7 @@
 package com.termux.app;
 
 import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.PendingIntent;
@@ -10,17 +11,23 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.RectF;
+import android.graphics.drawable.GradientDrawable;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.Gravity;
-import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
@@ -33,34 +40,52 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.termux.R;
 import com.termux.shared.notification.NotificationUtils;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 悬浮球服务（本项目新增）。
  *
  * 在任意界面（游戏、桌面、其他 App）之上显示一个只能贴边停靠的悬浮球：
  *   - 单击悬浮球：展开/收起遥控页（页面为 /float，无任何窗口装饰，直接铺满小窗）
- *   - 拖动悬浮球：只能吸附在屏幕左/右边缘（半隐藏贴边，纵向可停在任意位置），
- *     单击露出的一角会先滑出，再单击才展开小窗
+ *   - 拖动悬浮球：只能吸附在屏幕左/右边缘（完整可见贴边），纵向可停在任意位置
  *   - 展开的小窗无壳：没有标题栏/边框/圆角/阴影，就是遥控页本身
- *       · 尺寸固定且不可拖动：竖屏约 300×520（比旧版小一号，尽量不挡游戏画面），
- *         横屏自动压缩高度不溢出屏；展开位置贴悬浮球所在的一侧屏幕边缘
+ *       · 尺寸固定且不可拖动：竖屏约 300×520；横屏自动压缩高度不溢出屏
+ *       · 展开位置贴悬浮球所在的一侧屏幕边缘
  *       · 展开期间悬浮球自动隐藏（不另外占用屏幕边缘），
  *       · 收起通道：
- *           1) 遥控页左上角 KaguraX 徽标（圆形 logo + 名称，无多余图标）即「收起」钮，
- *              悬浮窗环境可点，经 KaguraXBridge.collapse() JS 桥收起；
+ *           1) 遥控页左上角 KaguraX 徽标经 KaguraXBridge.collapse() JS 桥收起；
  *           2) 系统返回键 / 全面屏返回手势 —— 在窗口内容层最顶层（根视图 dispatchKeyEvent）
- *              拦截：网页可后退时先后退，无历史则收起小窗；
- *              窗口可见即成为输入焦点窗口，返回键可稳定送达
+ *              拦截：网页可后退时先后退，无历史则收起小窗
  *       （“点击/双击窗口外收起”不可行：窗外触摸不派发给悬浮窗，ACTION_OUTSIDE 在
  *        游戏/多数 ROM 上也收不到，实测无效）
- *   - 长按悬浮球：直接停止服务
+ *   - 长按悬浮球：直接停止服务（仅球态响应，线态太细容易误触）
+ *
+ * 悬浮球有两种形态（本版新增，解决「悬浮窗挡住找图找字」）：
+ *   - 球态：40dp 圆形图标 + 状态光环，可点/可拖
+ *   - 线态：贴屏幕边缘的一条细线（默认白色；任务运行中变为色相循环的彩色线），
+ *           点一下即可唤回球态
+ *   球态展示后自动收起成线：空闲 5s，任务运行中 1s（用户要求「任务状态 1s 隐藏」）。
+ *   摇一摇手机也可直接唤回球态（游戏时不用瞄准那条细线）。
+ *
+ * 关键：所有悬浮窗（球/线、遥控小窗、日志气泡）都带 {@code FLAG_SECURE}。
+ *   该 flag 让窗口不参与系统截图/录屏的捕获（SurfaceFlinger 合成时跳过该层），
+ *   于是截图里该位置露出的是底层游戏画面，模板匹配 / OCR 完全不受遮挡影响；
+ *   而用户肉眼看到的内容不受任何影响（这是银行 App / DRM 播放器防截屏的同一机制）。
+ *   注意：不能依赖系统 Toast 来做日志气泡——Toast 的窗口由系统进程构造，
+ *   应用侧无法给它加 flag，必然进截图，所以气泡是自绘的 overlay 窗口。
  *
  * 实现要点：
  *   - 前台服务 + 常驻通知，保证在游戏内不被回收；
@@ -80,17 +105,21 @@ public class FloatingWindowService extends Service {
     private static final String SERVICE_URL = "http://127.0.0.1:8000/float";
 
     private static final String PREFS_NAME = "floating_window_prefs";
-    private static final String PREF_BALL_X = "ball_x";
+    private static final String PREF_BALL_LEFT = "ball_left";
     private static final String PREF_BALL_Y = "ball_y";
 
-    /** 悬浮球直径（dp），之前 54dp 偏大，缩小到 40dp */
+    /** 悬浮球直径（dp） */
     private static final int BALL_SIZE_DP = 40;
-    /** 贴边隐藏时露出的宽度（dp）：约球径（40dp）的 2/3，好点且仍算半隐藏 */
-    private static final int DOCK_VISIBLE_DP = 27;
-    /** 距左右边缘多近时触发吸附（dp） */
-    private static final int DOCK_EDGE_DP = 24;
-    /** 悬浮小窗竖屏目标尺寸(dp)：比旧版(340×620)小一号，避免盖住游戏画面太多；
-     *  宽受限、高控制在页面可滚动范围内 */
+    /** 贴边时与屏幕边缘的间隙（dp，仅球态；线态是贴在边缘上的） */
+    private static final int EDGE_MARGIN_DP = 6;
+
+    /** 线态：可见线宽（dp）、线长（dp）、窗口宽度（dp） */
+    private static final int LINE_WIDTH_DP = 4;
+    private static final int LINE_HEIGHT_DP = 56;
+    /** 线态窗口比线本身宽一点：留出绘制与点击余量（线居中画在窗口里） */
+    private static final int LINE_WINDOW_W_DP = 12;
+
+    /** 悬浮小窗竖屏目标尺寸(dp) */
     private static final int WINDOW_W_DP = 300;
     private static final int WINDOW_H_DP = 520;
 
@@ -98,8 +127,21 @@ public class FloatingWindowService extends Service {
     private static final String TASK_STATUS_URL = "http://127.0.0.1:8000/api/task_status";
     private static final int STATUS_TIMEOUT_MS = 1200;
 
-    /** 悬浮球「任务运行中」状态轮询周期（毫秒） */
-    private static final long MONITOR_INTERVAL_MS = 2500;
+    /** 状态轮询周期（毫秒）：要在任务开始/结束后 1s 内收起球，轮询不能慢于 1s */
+    private static final long MONITOR_INTERVAL_MS = 1000;
+
+    /** 球态展示后自动收起成线的时间：空闲 5s / 任务运行中 1s */
+    private static final long AUTO_HIDE_IDLE_MS = 5000;
+    private static final long AUTO_HIDE_RUNNING_MS = 1000;
+
+    /** 摇一摇：加速度偏离重力阈值（m/s²）与防抖间隔（毫秒） */
+    private static final float SHAKE_THRESHOLD = 13.0f;
+    private static final long SHAKE_DEBOUNCE_MS = 900;
+
+    /** 日志气泡：停留时长、两次弹出最小间隔（限流）、文本最长字符数 */
+    private static final long LOG_BUBBLE_DURATION_MS = 2200;
+    private static final long LOG_BUBBLE_MIN_INTERVAL_MS = 1200;
+    private static final int LOG_BUBBLE_MAX_CHARS = 56;
 
     /** 状态光环：球体外缘留白(dp)与光环线宽(dp) */
     private static final int RING_GAP_DP = 5;
@@ -110,6 +152,9 @@ public class FloatingWindowService extends Service {
     private static final int COLOR_RUNNING_DIM = 0x5900E676;
     private static final int COLOR_IDLE = 0xFF9E9E9E;
     private static final int COLOR_IDLE_DIM = 0x339E9E9E;
+
+    /** 线态颜色：空闲=白线；运行中=按色相循环取色（见 LineView） */
+    private static final int COLOR_LINE_IDLE = 0xFFFFFFFF;
 
     /** 服务是否运行中（同进程静态标记，应用退后台自动开启时据此避免重复启动） */
     private static boolean sRunning = false;
@@ -131,16 +176,27 @@ public class FloatingWindowService extends Service {
     }
 
     private WindowManager mWindowManager;
+
+    /** 悬浮球窗口：顶层容器内含「球态内容」与「线态内容」两套子视图，按状态切可见性 */
     private WindowManager.LayoutParams mBallParams;
     private View mBallView;
+    private View mBallCircleView;
+    private LineView mBallLineView;
+    private RingView mRingView;
+
     private WindowManager.LayoutParams mWindowParams;
     private View mWindowView;
     private WebView mWebView;
     private boolean mWindowVisible = false;
     private boolean mWebViewPaused = false;
 
-    /** 悬浮球是否处于贴边隐藏状态 */
-    private boolean mBallDocked = false;
+    /** 日志气泡窗口（自绘 overlay；系统 Toast 加不了 FLAG_SECURE，不能用） */
+    private WindowManager.LayoutParams mBubbleParams;
+    private TextView mBubbleView;
+    private boolean mBubbleVisible = false;
+
+    /** 悬浮球是否已「隐藏成线」（true=线态，false=球态） */
+    private boolean mBallCollapsed = false;
 
     /** 展开的小窗当前贴靠屏幕哪一侧边缘（true=右边缘，false=左边缘） */
     private boolean mWindowDockedRight = false;
@@ -149,18 +205,37 @@ public class FloatingWindowService extends Service {
     private float mTouchDownRawX, mTouchDownRawY;
     private int mTouchStartX, mTouchStartY;
     private boolean mDragging;
-    private boolean mWasDockedAtDown;
+    /** 本次按下时悬浮球是否处于线态（线态只响应单击，不跟手拖动） */
+    private boolean mCollapsedAtDown;
     private int mTouchSlop;
 
-    /** 运行状态光环（叠加在悬浮球图标外圈） */
-    private View mRingView;
     private ObjectAnimator mRingAnimator;
+    private ValueAnimator mLineColorAnimator;
 
-    /** 是否正在执行任务（轮询线程查后端后回主线程刷新，驱动光环转绿旋转） */
+    /** 是否正在执行任务（轮询线程查后端后回主线程刷新，驱动光环与线色） */
     private volatile boolean mTaskRunning = false;
     /** 轮询线程开关（onDestroy 置 false 退出） */
     private volatile boolean mMonitorEnabled = false;
     private Thread mMonitorThread;
+    /** 已消费的日志序号：随轮询带上，后端据此增量返回新日志（去重，不重复弹气泡） */
+    private volatile long mLastLogSeq = 0;
+
+    /** 摇一摇唤出 */
+    private SensorManager mSensorManager;
+    private SensorEventListener mShakeListener;
+    private long mLastShakeAt = 0;
+
+    /** UI 线程 Handler：自动收起计时、气泡计时都挂在这上面 */
+    private final Handler mUiHandler = new Handler(Looper.getMainLooper());
+    /** 球态展示超时 → 收起成线 */
+    private final Runnable mAutoHideRunnable = () -> collapseBall();
+    /** 气泡到时 → 淡出 */
+    private final Runnable mBubbleHideRunnable = () -> fadeOutLogBubble();
+
+    /** 气泡限流与同文本合并 */
+    private long mBubbleShownAt = 0;
+    private String mBubbleLastRaw = "";
+    private int mBubbleRepeat = 0;
 
     @Override
     public void onCreate() {
@@ -181,7 +256,9 @@ public class FloatingWindowService extends Service {
         setupNotification();
         createBall(screenW, screenH);
         createWindow(screenW, screenH);
-        startMonitoring();   // 轮询后端任务状态并驱动光环（执行任务中才转绿）
+        createLogBubble();
+        startShakeDetect();
+        startMonitoring();   // 轮询任务状态 + 顺带增量取日志
         sRunning = true;
     }
 
@@ -194,13 +271,18 @@ public class FloatingWindowService extends Service {
     public void onDestroy() {
         sRunning = false;
         stopRingAnimation();
+        stopLineColorAnimation();
+        mUiHandler.removeCallbacks(mAutoHideRunnable);
+        mUiHandler.removeCallbacks(mBubbleHideRunnable);
+        stopShakeDetect();
         mMonitorEnabled = false;
         if (mMonitorThread != null) {
             mMonitorThread.interrupt();   // 打断轮询休眠，线程随即退出
             mMonitorThread = null;
         }
-        removeView(mBallView, mBallParams);
-        removeView(mWindowView, mWindowParams);
+        removeView(mBallView);
+        removeView(mWindowView);
+        removeView(mBubbleView);
         if (mWebView != null) {
             mWebView.removeAllViews();
             mWebView.destroy();
@@ -238,13 +320,13 @@ public class FloatingWindowService extends Service {
         startForeground(NOTIFICATION_ID, notification);
     }
 
-    // ==================== 悬浮球 ====================
+    // ==================== 悬浮球（球态 / 线态） ====================
 
     /**
-     * 创建悬浮球：顶层容器 = 状态光环(RingView) + 居中图标。
-     * 容器直径比图标大 2×RING_GAP_DP，光环刚好露在图标外圈；
-     * 光环是纯色圆环 + 一段高亮弧，高亮弧随 rotation 动画沿边缘旋转
-     * （圆环对称，旋转视觉上只有高亮弧在动）。拖动/点击/长按监听挂在顶层容器上。
+     * 创建悬浮球窗口：顶层容器 = 球态内容（光环 + 图标） + 线态内容（细线），
+     * 两者按 {@link #mBallCollapsed} 切换可见性，窗口尺寸随之变化。
+     *
+     * 窗口带 FLAG_SECURE：不进入系统截图/录屏，因此悬浮球不会污染找图找字的输入。
      */
     private void createBall(int screenW, int screenH) {
         int ballSize = dp(BALL_SIZE_DP);
@@ -252,14 +334,14 @@ public class FloatingWindowService extends Service {
         int box = ballSize + ringGap * 2;
 
         FrameLayout root = new FrameLayout(this);
-        root.setLayoutParams(new FrameLayout.LayoutParams(box, box));
 
-        // 状态光环（先 add，图标后 add 盖在上面）
+        // ---- 球态内容：状态光环 + 图标 ----
+        FrameLayout circle = new FrameLayout(this);
         RingView ring = new RingView(this, dp(RING_STROKE_DP));
         ring.setClickable(false);
         ring.setFocusable(false);
         ring.configure(COLOR_IDLE, COLOR_IDLE_DIM);   // 初始未知状态：静止灰弧
-        root.addView(ring, new FrameLayout.LayoutParams(box, box));
+        circle.addView(ring, new FrameLayout.LayoutParams(box, box));
         mRingView = ring;
         mRingAnimator = ObjectAnimator.ofFloat(ring, View.ROTATION, 0f, 360f);
         mRingAnimator.setDuration(1800);
@@ -271,27 +353,44 @@ public class FloatingWindowService extends Service {
         ball.setContentDescription(getString(R.string.action_floating_ball));
         ball.setClickable(false);
         ball.setFocusable(false);
-        root.addView(ball, new FrameLayout.LayoutParams(ballSize, ballSize, Gravity.CENTER));
+        circle.addView(ball, new FrameLayout.LayoutParams(ballSize, ballSize, Gravity.CENTER));
+
+        root.addView(circle, new FrameLayout.LayoutParams(box, box));
+        mBallCircleView = circle;
+
+        // ---- 线态内容：贴屏幕边缘的细线 ----
+        LineView line = new LineView(this, dp(LINE_WIDTH_DP));
+        line.setClickable(false);
+        line.setFocusable(false);
+        line.setVisibility(View.GONE);
+        root.addView(line, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        mBallLineView = line;
+
+        // 彩色流动：色相 0~360 循环，所有颜色都走一遍 → 视觉上就是「彩色变换线」
+        mLineColorAnimator = ValueAnimator.ofFloat(0f, 360f);
+        mLineColorAnimator.setDuration(2400);
+        mLineColorAnimator.setRepeatCount(ValueAnimator.INFINITE);
+        mLineColorAnimator.setInterpolator(new LinearInterpolator());
+        mLineColorAnimator.addUpdateListener(a -> line.setHue((float) a.getAnimatedValue()));
 
         mBallParams = new WindowManager.LayoutParams(
                 box, box,
                 overlayType(),
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        // 关键：悬浮窗不参与系统截图/录屏捕获，截图里露出底层游戏画面
+                        | WindowManager.LayoutParams.FLAG_SECURE,
                 PixelFormat.TRANSLUCENT);
         mBallParams.gravity = Gravity.TOP | Gravity.START;
 
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        mBallParams.x = prefs.getInt(PREF_BALL_X, screenW - box - dp(12));
         mBallParams.y = prefs.getInt(PREF_BALL_Y, screenH / 3);
-        // 上次贴边保存的位置在屏幕外，据此恢复贴边状态
-        if (mBallParams.x < 0 || mBallParams.x > screenW - box) {
-            mBallDocked = true;
-        }
 
-        // 单击展开/收起（贴边时先滑出），拖动移动（碰边实时吸附），长按停止服务
+        // 单击：球态=展开/收起小窗；线态=唤回球态。拖动换边（仅球态），长按停止服务（仅球态）
         root.setOnTouchListener(makeDragListener(root, mBallParams, v -> onBallClick()));
         root.setOnLongClickListener(v -> {
+            if (mBallCollapsed) return false;   // 线态太细，不响应长按，避免误触停服
             Toast.makeText(this, R.string.floating_toast_stopped, Toast.LENGTH_SHORT).show();
             stopSelf();
             return true;
@@ -299,13 +398,199 @@ public class FloatingWindowService extends Service {
 
         mWindowManager.addView(root, mBallParams);
         mBallView = root;
-        // 启动即吸附到边缘：悬浮球只出现在屏幕左/右边缘，不留中间
-        snapBallToEdge();
+
+        // 启动即球态（贴边完整显示），随后按 5s/1s 自动收成线
+        applyBallVisualState(prefs.getBoolean(PREF_BALL_LEFT, false));
+        scheduleAutoHide();
     }
 
-    // ==================== 运行状态光环 ====================
+    /** 单击悬浮球：线态→唤回球态；球态→展开/收起遥控小窗 */
+    private void onBallClick() {
+        if (mBallCollapsed) {
+            expandBall();
+        } else {
+            toggleWindow();
+        }
+    }
 
-    /** 启动/停止光环旋转动画 */
+    /** 切入线态（球态展示超时后调用） */
+    private void collapseBall() {
+        if (mWindowVisible || mBallCollapsed) return;   // 面板展开时不动球
+        mBallCollapsed = true;
+        applyBallVisualState(isBallOnLeft());
+        saveBallPosition();
+    }
+
+    /** 唤回球态并重置自动收起计时（摇一摇、点击线条、收起小窗都走这里） */
+    private void expandBall() {
+        if (mWindowVisible) return;   // 小窗展开时球本就隐藏
+        mBallCollapsed = false;
+        applyBallVisualState(isBallOnLeft());
+        scheduleAutoHide();
+    }
+
+    /**
+     * 按当前形态摆放悬浮球：改窗口尺寸、切子视图可见性、贴到指定边缘。
+     * 球态与线态都以「球心纵向位置」为锚点，切换形态时视觉位置不跳。
+     *
+     * @param onLeft 是否贴屏幕左边缘
+     */
+    private void applyBallVisualState(boolean onLeft) {
+        if (mBallView == null || mBallParams == null) return;
+        int screenW = mWindowManager.getDefaultDisplay().getWidth();
+        int screenH = mWindowManager.getDefaultDisplay().getHeight();
+
+        // 换尺寸前先算出当前中心的纵向位置，换完再按新高度摆回去
+        int centerY = mBallParams.y + mBallParams.height / 2;
+
+        if (mBallCollapsed) {
+            mBallParams.width = dp(LINE_WINDOW_W_DP);
+            mBallParams.height = dp(LINE_HEIGHT_DP);
+            mBallCircleView.setVisibility(View.GONE);
+            mBallLineView.setVisibility(View.VISIBLE);
+        } else {
+            int box = dp(BALL_SIZE_DP) + dp(RING_GAP_DP) * 2;
+            mBallParams.width = box;
+            mBallParams.height = box;
+            mBallCircleView.setVisibility(View.VISIBLE);
+            mBallLineView.setVisibility(View.GONE);
+        }
+        updateLineAppearance();
+
+        int margin = mBallCollapsed ? 0 : dp(EDGE_MARGIN_DP);
+        mBallParams.x = onLeft ? margin : screenW - mBallParams.width - margin;
+        mBallParams.y = clamp(centerY - mBallParams.height / 2, 0, screenH - mBallParams.height);
+
+        try {
+            mWindowManager.updateViewLayout(mBallView, mBallParams);
+        } catch (Exception e) {
+            Log.w(LOG_TAG, "updateViewLayout failed: " + e.getMessage());
+        }
+
+        // 气泡只在「球隐藏成线」时出现
+        if (!mBallCollapsed) hideLogBubbleNow();
+        else if (mBubbleVisible) positionLogBubble();
+    }
+
+    /** 悬浮球是否贴在屏幕左半边（拖动换边后据此决定贴哪侧） */
+    private boolean isBallOnLeft() {
+        if (mBallParams == null) return false;
+        int screenW = mWindowManager.getDefaultDisplay().getWidth();
+        return (mBallParams.x + mBallParams.width / 2) < screenW / 2;
+    }
+
+    /** 拖动松手：无条件吸附到最近的左/右边缘（球态与线态都贴边） */
+    private void snapBallToEdge() {
+        if (mBallView == null || mBallParams == null) return;
+        applyBallVisualState(isBallOnLeft());
+    }
+
+    /** 把视图位置限制在屏幕内（拖动悬浮球时防止拖出屏幕找不回来） */
+    private void clampPosition(WindowManager.LayoutParams params, View view) {
+        int screenW = mWindowManager.getDefaultDisplay().getWidth();
+        int screenH = mWindowManager.getDefaultDisplay().getHeight();
+        int viewW = view.getWidth();
+        int viewH = view.getHeight();
+        params.x = Math.max(0, Math.min(params.x, Math.max(0, screenW - viewW)));
+        params.y = Math.max(0, Math.min(params.y, Math.max(0, screenH - viewH)));
+    }
+
+    private void saveBallPosition() {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putBoolean(PREF_BALL_LEFT, isBallOnLeft())
+                .putInt(PREF_BALL_Y, mBallParams.y)
+                .apply();
+    }
+
+    // ==================== 自动收起计时 ====================
+
+    /** 重置自动收起计时：空闲 5s、任务运行中 1s 后把球收成线；小窗展开时不计时 */
+    private void scheduleAutoHide() {
+        mUiHandler.removeCallbacks(mAutoHideRunnable);
+        if (mWindowVisible) return;
+        mUiHandler.postDelayed(mAutoHideRunnable,
+                mTaskRunning ? AUTO_HIDE_RUNNING_MS : AUTO_HIDE_IDLE_MS);
+    }
+
+    private void cancelAutoHide() {
+        mUiHandler.removeCallbacks(mAutoHideRunnable);
+    }
+
+    // ==================== 摇一摇唤出 ====================
+
+    /** 注册加速度传感器：摇动手机唤回球态（游戏里不必瞄准那条细线去点） */
+    private void startShakeDetect() {
+        mSensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        if (mSensorManager == null) return;
+        Sensor accel = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        if (accel == null) {
+            Log.w(LOG_TAG, "No accelerometer, shake-to-show unavailable");
+            return;
+        }
+        mShakeListener = new SensorEventListener() {
+            @Override
+            public void onSensorChanged(SensorEvent event) {
+                float x = event.values[0], y = event.values[1], z = event.values[2];
+                double g = Math.sqrt(x * x + y * y + z * z);
+                if (Math.abs(g - SensorManager.GRAVITY_EARTH) < SHAKE_THRESHOLD) return;
+                long now = System.currentTimeMillis();
+                if (now - mLastShakeAt < SHAKE_DEBOUNCE_MS) return;   // 防抖：一次摇动只算一次
+                mLastShakeAt = now;
+                mUiHandler.post(FloatingWindowService.this::onShake);
+            }
+
+            @Override
+            public void onAccuracyChanged(Sensor sensor, int accuracy) { }
+        };
+        // SENSOR_DELAY_UI（约 15Hz）足够识别摇动，比 GAME 省电
+        mSensorManager.registerListener(mShakeListener, accel, SensorManager.SENSOR_DELAY_UI);
+    }
+
+    private void stopShakeDetect() {
+        if (mSensorManager != null && mShakeListener != null) {
+            try {
+                mSensorManager.unregisterListener(mShakeListener);
+            } catch (Exception ignored) { }
+        }
+        mShakeListener = null;
+    }
+
+    /** 摇一摇：只负责「唤出」，不负责收起——否则玩游戏晃手机会把球晃没 */
+    private void onShake() {
+        if (mWindowVisible) return;        // 小窗展开时不响应
+        if (!mBallCollapsed) {             // 已是球态：只续期，不打断
+            scheduleAutoHide();
+            return;
+        }
+        expandBall();
+    }
+
+    // ==================== 线态外观 ====================
+
+    /** 按任务状态切换线条配色：空闲=白线静止；运行中=色相循环的彩色线 */
+    private void updateLineAppearance() {
+        if (mBallLineView == null) return;
+        mBallLineView.setColorful(mTaskRunning);
+        if (mTaskRunning) {
+            if (mLineColorAnimator != null && !mLineColorAnimator.isStarted()) {
+                mLineColorAnimator.start();
+            }
+        } else {
+            stopLineColorAnimation();
+        }
+    }
+
+    private void stopLineColorAnimation() {
+        if (mLineColorAnimator != null && mLineColorAnimator.isStarted()) {
+            mLineColorAnimator.cancel();
+        }
+        if (mBallLineView != null) {
+            mBallLineView.setHue(0f);
+            mBallLineView.invalidate();
+        }
+    }
+
     private void startRingAnimation() {
         if (mRingView == null || mRingAnimator == null) return;
         if (!mRingAnimator.isStarted()) {
@@ -367,45 +652,133 @@ public class FloatingWindowService extends Service {
         }
     }
 
-    // ==================== 任务运行状态轮询（后端 /api/task_status） ====================
+    /**
+     * 线态自定义 View：贴屏幕边缘的一条细线。
+     * 空闲=白线；任务运行中=色相循环的彩色线（hue 由 ValueAnimator 驱动）。
+     */
+    private static final class LineView extends View {
+        private final Paint mPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final float mLineWidth;
+        private final float[] mHsv = new float[]{0f, 1f, 1f};
+        private float mHue = 0f;
+        private boolean mColorful = false;
 
-    /** 请求后端：当前是否有任务正在执行（不带 device=任一设备在跑即视为执行中）。
-     *  悬浮球只在项目运行时才存在，这里只关心「有没有任务在跑」来点亮光环。 */
-    private static boolean isTaskRunning() {
+        LineView(Context context, float lineWidth) {
+            super(context);
+            mLineWidth = lineWidth;
+            mPaint.setStyle(Paint.Style.STROKE);
+            mPaint.setStrokeCap(Paint.Cap.ROUND);
+            mPaint.setStrokeWidth(lineWidth);
+            mPaint.setColor(COLOR_LINE_IDLE);
+        }
+
+        void setColorful(boolean colorful) {
+            if (mColorful == colorful) return;
+            mColorful = colorful;
+            invalidate();
+        }
+
+        void setHue(float hue) {
+            mHue = hue;
+            if (mColorful) invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float cx = getWidth() / 2f;
+            float half = mLineWidth / 2f;
+            float top = half + 1f;
+            float bottom = getHeight() - half - 1f;
+            if (bottom <= top) return;
+            if (mColorful) {
+                mHsv[0] = mHue % 360f;
+                mPaint.setColor(Color.HSVToColor(mHsv));
+            } else {
+                mPaint.setColor(COLOR_LINE_IDLE);
+            }
+            canvas.drawLine(cx, top, cx, bottom, mPaint);
+        }
+    }
+
+    // ==================== 任务状态轮询 + 日志增量 ====================
+
+    /** /api/task_status 的解析结果 */
+    private static final class Status {
+        boolean running;
+        String taskName = "";
+        long logSeq = 0;
+        final List<LogItem> logs = new ArrayList<>();
+    }
+
+    /** 一条日志（气泡一次只显示最后一条） */
+    private static final class LogItem {
+        String message = "";
+        String level = "info";
+    }
+
+    /** 请求后端：任务运行状态 + since_seq 之后的新日志（顺带，不额外建通道）。
+     *  悬浮球只在项目运行时才存在，这里只关心「有没有任务在跑」来点亮光环/线色。 */
+    private Status fetchStatus() {
         HttpURLConnection conn = null;
         try {
-            URL url = new URL(TASK_STATUS_URL);
+            URL url = new URL(TASK_STATUS_URL + "?since_seq=" + mLastLogSeq);
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(STATUS_TIMEOUT_MS);
             conn.setReadTimeout(STATUS_TIMEOUT_MS);
-            if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) return false;
+            if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) return null;
             InputStream in = conn.getInputStream();
             StringBuilder sb = new StringBuilder();
-            byte[] buf = new byte[512];
+            byte[] buf = new byte[1024];
             int n;
             while ((n = in.read(buf)) > 0) sb.append(new String(buf, 0, n, "UTF-8"));
-            // 返回形如 {"running": true, "task_name": "..."}
-            return sb.toString().replaceAll("\\s+", "").contains("\"running\":true");
+
+            JSONObject obj = new JSONObject(sb.toString());
+            Status st = new Status();
+            st.running = obj.optBoolean("running", false);
+            st.taskName = obj.optString("task_name", "");
+            st.logSeq = obj.optLong("log_seq", mLastLogSeq);
+            JSONArray arr = obj.optJSONArray("logs");
+            if (arr != null) {
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject o = arr.optJSONObject(i);
+                    if (o == null) continue;
+                    LogItem item = new LogItem();
+                    item.message = o.optString("message", "");
+                    item.level = o.optString("level", "info");
+                    if (!item.message.isEmpty()) st.logs.add(item);
+                }
+            }
+            return st;
         } catch (Exception e) {
-            return false;   // 后端未响应 → 一律按空闲处理
+            return null;   // 后端未响应 → 一律按空闲处理，不影响悬浮球存在
         } finally {
             if (conn != null) conn.disconnect();
         }
     }
 
-    /** 后台轮询线程：周期查询任务状态；状态翻转时回主线程刷新光环 */
+    /** 后台轮询线程：周期查询任务状态与新增日志；有变化时回主线程刷新 UI */
     private void startMonitoring() {
         mMonitorEnabled = true;
         mMonitorThread = new Thread(() -> {
-            boolean lastRunning = false;
+            Boolean lastRunning = null;
             while (mMonitorEnabled) {
-                final boolean running = isTaskRunning();
-                if (running != lastRunning) {
-                    new Handler(Looper.getMainLooper())
-                            .post(() -> refreshBallUI(running));
+                Status st = fetchStatus();
+                if (st != null) {
+                    final boolean running = st.running;
+                    final List<LogItem> logs = st.logs;
+                    // 消费掉已取回的日志序号：无论本轮是否真的弹了气泡，都不再重复取
+                    mLastLogSeq = st.logSeq;
+                    if (lastRunning == null || running != lastRunning) {
+                        new Handler(Looper.getMainLooper()).post(() -> refreshBallUI(running));
+                    }
+                    lastRunning = running;
+                    if (!logs.isEmpty()) {
+                        final LogItem last = logs.get(logs.size() - 1);
+                        new Handler(Looper.getMainLooper()).post(() -> showLogBubble(last));
+                    }
                 }
-                lastRunning = running;
                 try {
                     Thread.sleep(MONITOR_INTERVAL_MS);
                 } catch (InterruptedException e) {
@@ -417,60 +790,160 @@ public class FloatingWindowService extends Service {
         mMonitorThread.start();
     }
 
-    /** 主线程：按查询结果点亮光环：任务执行中=绿色旋转弧；空闲=静止灰弧 */
+    /** 主线程：按任务状态刷新光环与线色；任务刚开始时收起小窗、回球态（1s 后自动成线） */
     private void refreshBallUI(boolean running) {
-        if (mBallView == null || mRingView == null) return;
+        if (mBallView == null) return;
+        boolean changed = running != mTaskRunning;
         mTaskRunning = running;
+
         if (running) {
-            ((RingView) mRingView).configure(COLOR_RUNNING, COLOR_RUNNING_DIM);
+            mRingView.configure(COLOR_RUNNING, COLOR_RUNNING_DIM);
             startRingAnimation();
         } else {
-            ((RingView) mRingView).configure(COLOR_IDLE, COLOR_IDLE_DIM);
+            mRingView.configure(COLOR_IDLE, COLOR_IDLE_DIM);
             stopRingAnimation();
+        }
+        updateLineAppearance();
+
+        if (changed) {
+            if (running && mWindowVisible) {
+                // 任务启动：收起遥控小窗（回到球态），随后 1s 自动收成线
+                collapseWindow();
+            } else {
+                scheduleAutoHide();
+            }
         }
     }
 
-    private void onBallClick() {
-        if (mBallDocked) {
-            // 贴边隐藏中：先滑出，本次点击不展开小窗
-            unDockBall();
-        } else {
-            toggleWindow();
-        }
+    // ==================== 日志气泡 ====================
+
+    /** 创建日志气泡：自绘的胶囊文本窗，带 FLAG_SECURE 且不可触摸（绝不拦游戏点击） */
+    private void createLogBubble() {
+        TextView tv = new TextView(this);
+        tv.setTextSize(12f);
+        tv.setTextColor(0xFFFFFFFF);
+        tv.setMaxLines(1);
+        tv.setEllipsize(TextUtils.TruncateAt.END);
+        tv.setPadding(dp(10), dp(6), dp(10), dp(6));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xCC000000);        // 半透明黑底
+        bg.setCornerRadius(dp(14));     // 胶囊
+        tv.setBackground(bg);
+        tv.setVisibility(View.GONE);
+        tv.setClickable(false);
+        tv.setFocusable(false);
+
+        mBubbleParams = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                overlayType(),
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_SECURE,   // 气泡同样不进截图
+                PixelFormat.TRANSLUCENT);
+        mBubbleParams.gravity = Gravity.TOP | Gravity.START;
+        mWindowManager.addView(tv, mBubbleParams);
+        mBubbleView = tv;
     }
 
     /**
-     * 吸附悬浮球到屏幕边缘：比较球中心与屏幕中线，吸到左或右边缘，
-     * 半隐藏（露出约 2/3），纵向位置保持。悬浮球只允许出现在屏幕边缘。
+     * 弹一条日志气泡。触发条件与节流：
+     *   - 只在「球已隐藏成线」且小窗未展开时出现（用户要求气泡仅在球隐藏时显示）；
+     *   - 两次弹出间隔不小于 LOG_BUBBLE_MIN_INTERVAL_MS（日志很密时天然丢中间态，
+     *     永远只展示最新状态，避免屏幕边缘一直闪）；
+     *   - 同一条文本连续出现时合并成「×N」。
      */
-    private void snapBallToEdge() {
-        if (mBallView == null || mBallParams == null) return;
-        int screenW = mWindowManager.getDefaultDisplay().getWidth();
-        int screenH = mWindowManager.getDefaultDisplay().getHeight();
-        int ballSize = mBallParams.width;
-        int centerX = mBallParams.x + ballSize / 2;
-        if (centerX < screenW / 2) {
-            mBallParams.x = dp(DOCK_VISIBLE_DP) - ballSize; // 左边缘半隐藏
+    private void showLogBubble(LogItem item) {
+        if (mBubbleView == null || item == null) return;
+        if (!mBallCollapsed || mWindowVisible) return;
+
+        long now = System.currentTimeMillis();
+        if (now - mBubbleShownAt < LOG_BUBBLE_MIN_INTERVAL_MS) return;
+
+        String raw = item.message;
+        if (raw.equals(mBubbleLastRaw)) {
+            mBubbleRepeat++;
         } else {
-            mBallParams.x = screenW - dp(DOCK_VISIBLE_DP);  // 右边缘半隐藏
+            mBubbleRepeat = 1;
+            mBubbleLastRaw = raw;
         }
-        mBallParams.y = Math.max(0, Math.min(mBallParams.y, screenH - ballSize));
-        mBallDocked = true;
-        mWindowManager.updateViewLayout(mBallView, mBallParams);
+        String text = raw.length() > LOG_BUBBLE_MAX_CHARS
+                ? raw.substring(0, LOG_BUBBLE_MAX_CHARS) + "…" : raw;
+        if (mBubbleRepeat > 1) text = text + "  ×" + mBubbleRepeat;
+
+        mBubbleView.setText(text);
+        mBubbleView.setTextColor(colorForLevel(item.level));
+        mBubbleShownAt = now;
+
+        positionLogBubble();
+        if (!mBubbleVisible) {
+            mBubbleView.setVisibility(View.VISIBLE);
+            mBubbleView.setAlpha(0f);
+            mBubbleView.animate().alpha(1f).setDuration(160).start();
+            mBubbleVisible = true;
+        }
+        mUiHandler.removeCallbacks(mBubbleHideRunnable);
+        mUiHandler.postDelayed(mBubbleHideRunnable, LOG_BUBBLE_DURATION_MS);
     }
 
-    /** 解除贴边隐藏：悬浮球完全回到屏幕内（仍贴近原边缘），供点击/拖动前调用 */
-    private void unDockBall() {
-        if (!mBallDocked) return;
+    /** 气泡出现在线条内侧：线在左边缘→气泡在线右侧；线在右边缘→气泡在线左侧 */
+    private void positionLogBubble() {
+        if (mBubbleView == null || mBallParams == null) return;
         int screenW = mWindowManager.getDefaultDisplay().getWidth();
-        int ballSize = mBallParams.width;
-        if (mBallParams.x < 0) {
-            mBallParams.x = dp(8);
-        } else {
-            mBallParams.x = screenW - ballSize - dp(8);
+        int screenH = mWindowManager.getDefaultDisplay().getHeight();
+
+        mBubbleView.measure(
+                View.MeasureSpec.makeMeasureSpec(screenW, View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(screenH, View.MeasureSpec.AT_MOST));
+        int w = mBubbleView.getMeasuredWidth();
+        int h = mBubbleView.getMeasuredHeight();
+
+        int gap = dp(6);
+        boolean onLeft = isBallOnLeft();
+        int x = onLeft
+                ? mBallParams.width + gap                    // 线在左 → 气泡在线的右侧
+                : screenW - mBallParams.width - gap - w;     // 线在右 → 气泡在线的左侧
+        int centerY = mBallParams.y + mBallParams.height / 2;
+
+        mBubbleParams.x = clamp(x, 0, Math.max(0, screenW - w));
+        mBubbleParams.y = clamp(centerY - h / 2, 0, Math.max(0, screenH - h));
+        try {
+            mWindowManager.updateViewLayout(mBubbleView, mBubbleParams);
+        } catch (Exception e) {
+            Log.w(LOG_TAG, "bubble layout failed: " + e.getMessage());
         }
-        mBallDocked = false;
-        mWindowManager.updateViewLayout(mBallView, mBallParams);
+    }
+
+    /** 立即隐藏气泡（切回球态/展开小窗/销毁时调用） */
+    private void hideLogBubbleNow() {
+        mUiHandler.removeCallbacks(mBubbleHideRunnable);
+        if (mBubbleView == null || !mBubbleVisible) return;
+        mBubbleVisible = false;
+        mBubbleView.animate().cancel();
+        mBubbleView.setVisibility(View.GONE);
+    }
+
+    /** 气泡到时淡出 */
+    private void fadeOutLogBubble() {
+        if (mBubbleView == null || !mBubbleVisible) return;
+        mBubbleVisible = false;
+        mBubbleView.animate().alpha(0f).setDuration(200)
+                .withEndAction(() -> {
+                    if (mBubbleView != null) mBubbleView.setVisibility(View.GONE);
+                })
+                .start();
+    }
+
+    /** 日志级别配色 */
+    private int colorForLevel(String level) {
+        if (level == null) return 0xFFEDEDED;
+        switch (level) {
+            case "error":   return 0xFFFF6B6B;
+            case "warning": return 0xFFFFCE54;
+            case "success": return 0xFF6BE58C;
+            default:        return 0xFFEDEDED;
+        }
     }
 
     // ==================== 悬浮小窗 ====================
@@ -480,8 +953,6 @@ public class FloatingWindowService extends Service {
         mWindowView = LayoutInflater.from(this).inflate(R.layout.floating_window, null);
         mWindowView.setVisibility(View.GONE); // 初始只显示悬浮球
 
-        // 无壳小窗尺寸：按当前屏幕方向计算（竖屏约 340×620，横屏自动压缩高度不溢出），
-        // 方向切换后由 adaptWindowToScreen() 重新适配
         int[] winSize = computeWindowSize();
         mWindowParams = new WindowManager.LayoutParams(
                 winSize[0], winSize[1],
@@ -489,7 +960,8 @@ public class FloatingWindowService extends Service {
                 // 不加 NOT_FOCUSABLE：页面输入框需要能获得焦点弹出键盘。
                 // 注意：不要依赖 FLAG_WATCH_OUTSIDE_TOUCH 做“点击窗口外收起”——该事件
                 // 在可聚焦 overlay + 游戏/多数 ROM 场景收不到，收起已交给悬浮球完成
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_SECURE,   // 小窗同样不进截图
                 PixelFormat.TRANSLUCENT);
         mWindowParams.gravity = Gravity.TOP | Gravity.START;
 
@@ -505,9 +977,7 @@ public class FloatingWindowService extends Service {
         settings.setUserAgentString(settings.getUserAgentString() + " KaguraXFloat/1.0");
         mWebView.setWebViewClient(new WebViewClient());
 
-        // 网页内「收起」按钮（/float 右上角，仅悬浮窗显示）经此桥收起小窗：
-        // 与“点击窗口外”等效但更直观可靠（不受触摸分发/ROM 差异影响）。
-        // JS 回调在 WebView 线程，需切主线程操作窗口。
+        // 网页内「收起」按钮经此桥收起小窗；JS 回调在 WebView 线程，需切主线程操作窗口
         Handler main = new Handler(Looper.getMainLooper());
         mWebView.addJavascriptInterface(new Object() {
             @JavascriptInterface
@@ -541,6 +1011,8 @@ public class FloatingWindowService extends Service {
 
     private void showWindow() {
         if (mWindowView == null) return;
+        cancelAutoHide();
+        hideLogBubbleNow();   // 展开小窗时不再弹气泡（面板里本来就有日志）
         // 首次展开才加载页面；此后收起只隐藏，浏览状态保留
         if (mWebView.getUrl() == null) {
             mWebView.loadUrl(SERVICE_URL);
@@ -557,11 +1029,11 @@ public class FloatingWindowService extends Service {
         int screenH = mWindowManager.getDefaultDisplay().getHeight();
         int w = mWindowParams.width;
         int h = mWindowParams.height;
-        // 悬浮球在哪一侧，小窗就贴该侧屏幕边缘展开（窗口只出现在左右边缘，不落中间）
-        boolean ballLeft = (mBallParams.x + mBallParams.width / 2) < screenW / 2;
+        // 悬浮球在哪一侧，小窗就贴该侧屏幕边缘展开
+        boolean ballLeft = isBallOnLeft();
         mWindowDockedRight = !ballLeft;
         mWindowParams.x = ballLeft ? 0 : screenW - w;
-        mWindowParams.y = Math.max(0, Math.min(mBallParams.y, screenH - h));
+        mWindowParams.y = clamp(mBallParams.y, 0, Math.max(0, screenH - h));
         // 展开期间隐藏悬浮球（不再占屏幕另一侧）；收起入口在遥控页左上角徽标 + 系统返回键
         mBallView.setVisibility(View.GONE);
 
@@ -577,26 +1049,18 @@ public class FloatingWindowService extends Service {
             mWebView.onPause();
             mWebViewPaused = true;
         }
-        // 收起：把隐藏的悬浮球恢复到小窗贴靠的同一条边缘半隐藏停靠
-        int screenW = mWindowManager.getDefaultDisplay().getWidth();
-        int screenH = mWindowManager.getDefaultDisplay().getHeight();
-        int ballSize = mBallParams.width;
-        if (mWindowDockedRight) {
-            mBallParams.x = screenW - dp(DOCK_VISIBLE_DP); // 右边缘半隐藏
-        } else {
-            mBallParams.x = dp(DOCK_VISIBLE_DP) - ballSize; // 左边缘半隐藏
-        }
-        mBallParams.y = Math.max(0, Math.min(mWindowParams.y, screenH - ballSize));
-        mBallDocked = true;
-        mWindowManager.updateViewLayout(mBallView, mBallParams);
-        mBallView.setVisibility(View.VISIBLE);
         mWindowVisible = false;
-        saveBallPosition(mBallParams.x, mBallParams.y);
+        // 收起：悬浮球回到「球态」并贴在小窗所在的那一侧，随后按 5s/1s 自动收成线
+        mBallCollapsed = false;
+        applyBallVisualState(mWindowDockedRight ? false : true);
+        mBallView.setVisibility(View.VISIBLE);
+        scheduleAutoHide();
+        saveBallPosition();
     }
 
     // ==================== 屏幕适配 ====================
 
-    /** 按当前屏幕方向/尺寸计算小窗宽高：竖屏默认 300×520（较旧版更小），横屏压缩到可用高度内（不低于 240dp） */
+    /** 按当前屏幕方向/尺寸计算小窗宽高：竖屏默认 300×520，横屏压缩到可用高度内（不低于 240dp） */
     private int[] computeWindowSize() {
         int screenW = mWindowManager.getDefaultDisplay().getWidth();
         int screenH = mWindowManager.getDefaultDisplay().getHeight();
@@ -635,9 +1099,8 @@ public class FloatingWindowService extends Service {
             mWindowManager.updateViewLayout(mWindowView, mWindowParams);
         }
         if (mBallParams == null) return;
-        // 悬浮球（展开期间隐藏中）：只保证没有落到屏幕外（半隐藏贴边的 x 不改变）
-        mBallParams.y = Math.max(0, Math.min(mBallParams.y, screenH - mBallParams.width));
-        mWindowManager.updateViewLayout(mBallView, mBallParams);
+        applyBallVisualState(isBallOnLeft());
+        if (mBubbleVisible) positionLogBubble();
     }
 
     @Override
@@ -647,11 +1110,13 @@ public class FloatingWindowService extends Service {
         adaptWindowToScreen();
     }
 
-    // ==================== 拖动、点击与调整大小 ====================
+    // ==================== 拖动与点击 ====================
 
     /**
      * 通用拖动监听：按住移动改变窗口位置，松手且未发生位移（<touchSlop）时视为点击。
-     * 悬浮球拖动中自由跟手（方便换边），松手时无条件吸附到最近的屏幕边缘（只出现在边缘）。
+     * 球态拖动中自由跟手（方便换边），松手时无条件吸附到最近的屏幕边缘。
+     * 线态不跟手拖动（窗口很窄，容易误拖），但超过 touchSlop 的滑动不会再被当成点击，
+     * 避免手指划过屏幕边缘时误唤出球。
      *
      * @param window  窗口的顶层 View（即 addView 时添加的那个 View，updateViewLayout 用它）
      * @param params  目标窗口的 LayoutParams（x/y 会被更新）
@@ -668,13 +1133,8 @@ public class FloatingWindowService extends Service {
                     mTouchStartX = params.x;
                     mTouchStartY = params.y;
                     mDragging = false;
-                    mWasDockedAtDown = (window == mBallView && mBallDocked);
-                    if (mWasDockedAtDown) {
-                        // 触摸贴边的悬浮球：先滑出，再跟手
-                        unDockBall();
-                        mTouchStartX = params.x;
-                        mTouchStartY = params.y;
-                    }
+                    mCollapsedAtDown = (window == mBallView && mBallCollapsed);
+                    cancelAutoHide();   // 交互期间不自动收起
                     return true;
                 case MotionEvent.ACTION_MOVE: {
                     float dx = event.getRawX() - mTouchDownRawX;
@@ -682,7 +1142,7 @@ public class FloatingWindowService extends Service {
                     if (!mDragging && (Math.abs(dx) > mTouchSlop || Math.abs(dy) > mTouchSlop)) {
                         mDragging = true;
                     }
-                    if (mDragging) {
+                    if (mDragging && !mCollapsedAtDown) {
                         params.x = mTouchStartX + (int) dx;
                         params.y = mTouchStartY + (int) dy;
                         clampPosition(params, window);
@@ -696,14 +1156,14 @@ public class FloatingWindowService extends Service {
                     if (mDragging) {
                         mDragging = false;
                         if (window == mBallView) {
-                            // 松手：无条件吸附到最近的左/右边缘，悬浮球只出现在屏幕边缘
+                            // 松手：无条件吸附到最近的左/右边缘
                             snapBallToEdge();
-                            saveBallPosition(params.x, params.y);
+                            saveBallPosition();
                         }
-                    } else if (onClick != null && !mWasDockedAtDown) {
-                        // 贴边状态点击只滑出，不展开
+                    } else if (onClick != null) {
                         onClick.onClick(v);
                     }
+                    if (window == mBallView) scheduleAutoHide();   // 交互结束重新计时
                     return true;
                 }
             }
@@ -711,30 +1171,7 @@ public class FloatingWindowService extends Service {
         };
     }
 
-    // 小窗不可拖动：展开位置固定贴悬浮球所在的那一侧屏幕边缘。
-    // 想换边时收起小窗、把悬浮球拖到另一侧再展开即可。
-
-    /** 把视图位置限制在屏幕内（拖动悬浮球时防止拖出屏幕找不回来） */
-    private void clampPosition(WindowManager.LayoutParams params, View view) {
-        int screenW = mWindowManager.getDefaultDisplay().getWidth();
-        int screenH = mWindowManager.getDefaultDisplay().getHeight();
-        int viewW = view.getWidth();
-        int viewH = view.getHeight();
-        int maxX = Math.max(0, screenW - viewW);
-        int maxY = Math.max(0, screenH - viewH);
-        params.x = Math.max(0, Math.min(params.x, maxX));
-        params.y = Math.max(0, Math.min(params.y, maxY));
-    }
-
-    private void saveBallPosition(int x, int y) {
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                .edit()
-                .putInt(PREF_BALL_X, x)
-                .putInt(PREF_BALL_Y, y)
-                .apply();
-    }
-
-    private void removeView(View view, WindowManager.LayoutParams params) {
+    private void removeView(View view) {
         if (view != null) {
             try {
                 mWindowManager.removeView(view);
@@ -754,5 +1191,10 @@ public class FloatingWindowService extends Service {
 
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private int clamp(int value, int min, int max) {
+        if (max < min) return min;
+        return Math.max(min, Math.min(value, max));
     }
 }

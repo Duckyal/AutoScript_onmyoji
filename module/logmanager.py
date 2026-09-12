@@ -9,6 +9,9 @@ class WebSocketLogManager:
         self.loop = None
         # 保存最近的日志历史（最多50条）
         self.log_history: deque = deque(maxlen=50)
+        # 日志自增序号：悬浮球随 /api/task_status 轮询增量取「新日志」弹气泡，
+        # 靠序号去重，避免同一条日志被重复弹出（不额外建 WebSocket 通道）
+        self.seq = 0
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -33,10 +36,12 @@ class WebSocketLogManager:
             self.active_connections.remove(websocket)
 
     def broadcast(self, message: str, level: str = "info", source: str = None): # type: ignore
+        self.seq += 1
         data = {
             "message": message, 
             "level": level,
-            "source": source  # 加上设备ID，前端可以用来区分
+            "source": source,  # 加上设备ID，前端可以用来区分
+            "seq": self.seq,   # 序号：悬浮球据此增量取新日志
         }
         
         # 保存到历史记录
@@ -73,6 +78,23 @@ class WebSocketLogManager:
         
         # 推送到前端
         self.broadcast(str(message), level, source)
+
+    def logs_since(self, since_seq: int = 0, limit: int = 3,
+                   skip_levels: tuple = ("debug",)) -> list:
+        """取序号大于 since_seq 的最近若干条日志（保持时间正序）。
+
+        悬浮球不额外建 WebSocket 通道，直接随 /api/task_status 轮询增量取用。
+        debug 级别默认跳过：找图流程里 debug 日志量很大，逐条弹气泡会让屏幕
+        边缘一直在闪，反而比常驻悬浮球更碍事。
+        """
+        try:
+            items = [d for d in self.log_history
+                     if d.get("seq", 0) > since_seq and d.get("level") not in skip_levels]
+        except Exception:
+            return []
+        if limit and len(items) > limit:
+            items = items[-limit:]
+        return items
 
     def clear_history(self):
         """清空历史日志"""

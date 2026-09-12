@@ -55,8 +55,8 @@ android {
         // 本地 0.118.0 > 远端 1.0.0 会永远误报「有新 APK」。
         // 发新版 APK 时：versionCode 必须递增(Android 覆盖安装要求)，versionName
         // 与 Release tag 一致；也可用环境变量 TERMUX_APP_VERSION_NAME 覆盖。
-        versionCode 124
-        versionName "1.1.1"
+        versionCode 125
+        versionName "1.2.0"
 
         if (appVersionName) versionName = appVersionName
         validateVersionName(versionName)
