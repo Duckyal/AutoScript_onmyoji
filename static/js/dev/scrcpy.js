@@ -331,6 +331,15 @@ const GESTURE_MIN_MOVE = 2;     // 设备坐标：实时手势最小移动步长
 let startX = 0, startY = 0;
 let startClientX = 0, startClientY = 0;
 let croppedBlob = null;
+// 当前 croppedBlob 的来源分辨率（= 模板基准分辨率）：框选时是视频流分辨率，上传文件时是文件名里的 _WxH。
+// 找图时随请求传给后端，用于算缩放比、判断该“放大模板”还是“放大截图”；拿不到就不传，由后端按设备分辨率兜底。
+let cropBaseSize = null;
+
+/** 从素材文件名解析基准分辨率（项目约定：xxx_WxH.png）；解析不到返回 null */
+function parseBaseSizeFromName(name) {
+    const m = /_(\d{3,5})x(\d{3,5})(?=\.[a-zA-Z0-9]+$|$)/.exec(name || '');
+    return m ? { width: parseInt(m[1], 10), height: parseInt(m[2], 10) } : null;
+}
 
 // ---- 实时手势（拖动遥控）状态机 ----
 // 拖动中不再"采集整条轨迹、松手后回放"，而是把 down/move/up 实时发给设备，做到"按住即跟手"。
@@ -533,13 +542,22 @@ function performCrop(realX, realY, cropW, cropH, callback) {
     const onBlob = (blob) => {
         if (!blob) { callback(null); return; }
         croppedBlob = blob;
+        // 框选区域的像素是按视频流分辨率裁下来的 → 这张模板的基准就是流的自然尺寸
+        const baseSize = getStreamNaturalSize();
+        cropBaseSize = (baseSize.width && baseSize.height)
+            ? { width: baseSize.width, height: baseSize.height } : null;
         const url = URL.createObjectURL(blob);
         cropPreview.src = url;
         cropPreview.style.display = 'block';
-        document.getElementById('region-x1').value = realX;
-        document.getElementById('region-y1').value = realY;
-        document.getElementById('region-x2').value = realX + cropW;
-        document.getElementById('region-y2').value = realY + cropH;
+        // 区域框一律写 0~1 比例（与后端 /api/find_image、ADB.找图 的区域语义一致）：
+        // 写像素会被后端当成比例再乘屏幕宽高，坐标偏移会错到屏幕外
+        const regionSize = getStreamNaturalSize();
+        const regionW = regionSize.width || (realX + cropW) || 1;
+        const regionH = regionSize.height || (realY + cropH) || 1;
+        document.getElementById('region-x1').value = (realX / regionW).toFixed(4);
+        document.getElementById('region-y1').value = (realY / regionH).toFixed(4);
+        document.getElementById('region-x2').value = ((realX + cropW) / regionW).toFixed(4);
+        document.getElementById('region-y2').value = ((realY + cropH) / regionH).toFixed(4);
         callback(blob);
     };
 
@@ -591,6 +609,8 @@ fileInput.addEventListener('change', (e) => {
         cropPreview.src = event.target.result;
         cropPreview.style.display = 'block';
         croppedBlob = file;
+        // 素材图靠文件名里的 _WxH 标识基准分辨率；没写就留空，交由后端按设备分辨率兜底
+        cropBaseSize = parseBaseSizeFromName(file.name);
     };
     reader.readAsDataURL(file);
 });
@@ -808,9 +828,10 @@ saveBtn.addEventListener('click', async () => {
     formData.append('file_name', fileName);
     formData.append('image', croppedBlob, fileName);
     
-    // 获取设备屏幕尺寸（从当前视频流元素获取实际尺寸）
-    const sz = getStreamNaturalSize();
-    if (sz.width && sz.height) {
+    // 屏幕尺寸 = 这张图的来源分辨率：框选时等于视频流尺寸，上传素材图时取文件名里的 _WxH。
+    // 后端会把它拼进文件名（xxx_WxH.png），成为该模板以后算缩放比的基准，取错会让脚本找不到图。
+    const sz = cropBaseSize || getStreamNaturalSize();
+    if (sz && sz.width && sz.height) {
         formData.append('screen_width', sz.width);
         formData.append('screen_height', sz.height);
     }
@@ -854,6 +875,11 @@ if (btnFindImage) {
         
         if (croppedBlob) {
             formData.append('image', croppedBlob, 'search.png');
+        }
+        // 模板来源分辨率：后端据此算缩放比、判断该“放大模板”还是“放大截图”（不传则按设备分辨率兜底）
+        if (cropBaseSize && cropBaseSize.width && cropBaseSize.height) {
+            formData.append('screen_width', cropBaseSize.width);
+            formData.append('screen_height', cropBaseSize.height);
         }
         
         try {
@@ -905,25 +931,27 @@ const btnClearRegion = document.getElementById('btn-clear-region');
 if (btnClearRegion) {
     btnClearRegion.addEventListener('click', () => {
         croppedBlob = null;
+        cropBaseSize = null;
         cropPreview.src = '';
         cropPreview.style.display = 'none';
-        document.getElementById('region-x1').value = '-1';
-        document.getElementById('region-y1').value = '-1';
-        document.getElementById('region-x2').value = '-1';
-        document.getElementById('region-y2').value = '-1';
+        document.getElementById('region-x1').value = '0';
+        document.getElementById('region-y1').value = '0';
+        document.getElementById('region-x2').value = '1';
+        document.getElementById('region-y2').value = '1';
     });
 }
 
-// 预览区域：根据 region-x1/y1/x2/y2 的当前值（-1=全屏，小数=长/宽比值，整数=像素）
-// 从视频流截取对应区域并显示到 crop-preview，与后端 /api/find_image 的小数语义保持一致
+// 预览区域：region-x1/y1/x2/y2 一律是 0~1 比例（留空 / 负数 = 未指定，用默认边界）
+// 从视频流截取对应区域并显示到 crop-preview，与后端 /api/find_image 的区域语义保持一致
 // 返回 Promise<Blob|null>：成功截取返回 blob（并已更新 croppedBlob/预览图/坐标框），失败返回 null
 function captureRegionFromStream() {
     return new Promise((resolve) => {
         const parseRegionVal = (id) => {
             const str = document.getElementById(id).value.trim();
-            if (str === '' || isNaN(parseFloat(str))) return -1;
-            // 与后端一致：含小数点按比值处理，否则按像素
-            return str.includes('.') ? parseFloat(str) : parseInt(str, 10);
+            if (str === '') return null;
+            const v = parseFloat(str);
+            // 空值 / 非数字 / 负数（旧的 -1 写法）都视为“未指定”
+            return (isNaN(v) || v < 0) ? null : v;
         };
         const x1v = parseRegionVal('region-x1');
         const y1v = parseRegionVal('region-y1');
@@ -939,9 +967,9 @@ function captureRegionFromStream() {
         const W = size.width;
         const H = size.height;
 
-        // 起点坐标 -1 表示 0，终点坐标 -1 表示宽/高；小数按比例换算
-        const toStart = (v, max) => v === -1 ? 0 : (Number.isInteger(v) ? v : Math.round(v * max));
-        const toEnd = (v, max) => v === -1 ? max : (Number.isInteger(v) ? v : Math.round(v * max));
+        // 0~1 比例 → 像素；未指定时起点取 0、终点取满宽/高
+        const toStart = (v, max) => Math.round((v === null ? 0 : v) * max);
+        const toEnd = (v, max) => Math.round((v === null ? 1 : v) * max);
 
         let x1 = Math.max(0, Math.min(toStart(x1v, W), W));
         let y1 = Math.max(0, Math.min(toStart(y1v, H), H));

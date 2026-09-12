@@ -37,7 +37,7 @@ class Task_k28:
                     result_txt = self.op.找字(x1=0.5, x2=0.7, y2=0.2, target_txt=r".*\d+/30.*", use_regex=True)
                     if result_txt:
                         import re
-                        match = re.search(r"(\d+)/30", result_txt[0])
+                        match = re.search(r"(\d+)/30", list(result_txt.keys())[0])
                         if match:
                             a = match.group(1)
                             print(a, result_txt)
@@ -58,9 +58,10 @@ class Task_k28:
                 if "自动轮换_1920x1080.png" in result:
                     self.op.点击(*result["自动轮换_1920x1080.png"])
                     self.op.sleep(1)
-                self.op.点击(*result["轮换设置_1920x1080.png"])
-                self.lunhuan()
-                self.op.图片预加载(*imgs)
+                if self.config["lunhuan"] != "None":
+                    self.op.点击(*result["轮换设置_1920x1080.png"])
+                    self.lunhuan()
+                    self.op.图片预加载(*imgs)
                 state = 1
             elif "掉落宝箱_1920x1080.png" in result:
                 self.op.点击(*result["掉落宝箱_1920x1080.png"])
@@ -87,33 +88,35 @@ class Task_k28:
         while True:
             self.op.check_stop()
             result = self.op.找图(priority_corner="tr")
-            if state == 0 and "全部_1920x1080.png" in result:
+            if "二星_1920x1080.png" in result and state == 0:
+                self.op.点击(*result["二星_1920x1080.png"])
+                state += 1
+            if f"{self.config['lunhuan']}_1920x1080.png" in result and state == 2:
+                self.op.点击(*result[f"{self.config['lunhuan']}_1920x1080.png"])
+                state += 1
+                self.op.sleep(1)  
+            elif "候补式神_1920x1080.png" in result and state == 3:
+                self.op.点击(*result["候补式神_1920x1080.png"])
+                state += 1
+            elif state == 1 and "全部_1920x1080.png" in result:
                 self.op.点击(*result["全部_1920x1080.png"])
                 state += 1
                 self.op.sleep(1)
-            if f"{self.config['lunhuan']}_1920x1080.png" in result and state == 1:
-                self.op.点击(*result[f"{self.config['lunhuan']}_1920x1080.png"])
-                state += 1
-                self.op.sleep(1)
-            elif "二星_1920x1080.png" in result and (state == 2 or state == 3):
-                self.op.点击(*result["二星_1920x1080.png"])
-                state += 1
-            elif "候补式神_1920x1080.png" in result and (state == 2 or state == 3):
-                self.op.点击(*result["候补式神_1920x1080.png"])
-                state += 1
             if state == 4:
                 break
 
         self.op.图片预加载("tasks/k28图片/滑块_1920x1080.png", "tasks/k28图片/二星_1920x1080.png", "tasks/k28图片/确定设置_1920x1080.png")
         while True:
             self.op.check_stop()
-            result = self.op.找图(y1=0.55)
-            if "二星_1920x1080.png" in result and "确定设置_1920x1080.png" in result:
-                self.op.长按(result["二星_1920x1080.png"][0], result["二星_1920x1080.png"][1], 3)
-                self.op.sleep(1)
-                self.op.点击(*result["确定设置_1920x1080.png"])
-                break
-            elif "二星_1920x1080.png" not in result and "滑块_1920x1080.png" in result:
-                x , y, r, *els = result["滑块_1920x1080.png"]
-                self.op.滑动(x, y, x+r, y, 5)      
+            result = self.op.找图(priority_corner="br")
+            if "二星_1920x1080.png" in result and "确定设置_1920x1080.png" in result and "滑块_1920x1080.png" in result:
+                if result["二星_1920x1080.png"][1] <= self.op.height*0.6:
+                    x , y, r, *els = result["滑块_1920x1080.png"]
+                    self.op.滑动(x, y, x+r, y, 5)   
+                else:
+                    self.op.长按(result["二星_1920x1080.png"][0], result["二星_1920x1080.png"][1], 3)
+                    self.op.sleep(1)
+                    self.op.点击(*result["确定设置_1920x1080.png"])
+                    break
+                   
         self.op.sleep(1)

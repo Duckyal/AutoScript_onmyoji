@@ -84,23 +84,23 @@
 
         <!-- 区域参数（找图找字共用） -->
           <div style="margin-bottom: 12px; padding: 10px; background-color: #f9fafb; border-radius: 4px;">
-            <label style="font-size: 13px; color: #374151; font-weight: bold;">区域坐标（-1表示全屏，支持小数）：</label>
+            <label style="font-size: 13px; color: #374151; font-weight: bold;">区域坐标（0~1 比例，留空或负数=全屏边界）：</label>
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 8px;">
               <div>
                 <label style="font-size: 11px; color: #6b7280;">x1</label>
-                <input type="text" id="region-x1" value="-1" style="width: 100%; padding: 3px; font-size: 12px; border: 1px solid #d1d5db; border-radius: 3px;">
+                <input type="text" id="region-x1" value="0" style="width: 100%; padding: 3px; font-size: 12px; border: 1px solid #d1d5db; border-radius: 3px;">
               </div>
               <div>
                 <label style="font-size: 11px; color: #6b7280;">y1</label>
-                <input type="text" id="region-y1" value="-1" style="width: 100%; padding: 3px; font-size: 12px; border: 1px solid #d1d5db; border-radius: 3px;">
+                <input type="text" id="region-y1" value="0" style="width: 100%; padding: 3px; font-size: 12px; border: 1px solid #d1d5db; border-radius: 3px;">
               </div>
               <div>
                 <label style="font-size: 11px; color: #6b7280;">x2</label>
-                <input type="text" id="region-x2" value="-1" style="width: 100%; padding: 3px; font-size: 12px; border: 1px solid #d1d5db; border-radius: 3px;">
+                <input type="text" id="region-x2" value="1" style="width: 100%; padding: 3px; font-size: 12px; border: 1px solid #d1d5db; border-radius: 3px;">
               </div>
               <div>
                 <label style="font-size: 11px; color: #6b7280;">y2</label>
-                <input type="text" id="region-y2" value="-1" style="width: 100%; padding: 3px; font-size: 12px; border: 1px solid #d1d5db; border-radius: 3px;">
+                <input type="text" id="region-y2" value="1" style="width: 100%; padding: 3px; font-size: 12px; border: 1px solid #d1d5db; border-radius: 3px;">
               </div>
             </div>
             <button id="btn-preview-region" style="width: 100%; margin-top: 8px; padding: 4px; font-size: 12px; border: 1px solid #c7d2fe; border-radius: 3px; background-color: #eef2ff; color: #4338ca; cursor: pointer;">预览区域截图</button>

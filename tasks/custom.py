@@ -304,37 +304,52 @@ class Task_custom:
 
     @staticmethod
     def _parse_region(raw: str):
+        """解析“区域”参数：x1,y1,x2,y2 一律 0~1 比例。
+
+        返回 None 表示“留空 / 解析不出 4 段 / 等价全屏”→ 调用方不带区域参数；
+        旧写法里的 -1（未指定）按位置归一化成 0（起点）或 1（终点）后再判断，
+        绝不把 -1 透传给 找图 / 找字——那会被当成比例，坐标偏移直接错到屏幕外。
+        """
         raw = (raw or "").strip()
-        if not raw or raw == "-1,-1,-1,-1":
-            return (-1, -1, -1, -1)
+        if not raw:
+            return None
         parts = [p.strip() for p in raw.split(",")]
         if len(parts) != 4:
-            return (-1, -1, -1, -1)
-        res = []
-        for p in parts:
-            n = Task_custom._to_num(p)
-            res.append(n if n is not None else -1)
-        return tuple(res)
+            return None
+
+        def _fix(v, default):
+            n = Task_custom._to_num(v)
+            if n is None:
+                return default
+            # 比例必须落在 0~1；负数（旧 -1 写法）或大于 1（旧像素写法）都回退默认边界
+            return n if 0 <= n <= 1 else default
+
+        bounds = (_fix(parts[0], 0), _fix(parts[1], 0), _fix(parts[2], 1), _fix(parts[3], 1))
+        if bounds == (0, 0, 1, 1):
+            return None
+        return bounds
 
     # ------------------------------------------------------------------
     def _do_find_image(self, params: dict) -> Optional[dict]:
         sim = float(params.get("sim") or 0.9)
         corner = params.get("corner") or "tl"
-        x1, y1, x2, y2 = self._parse_region(params.get("region") or "")
+        region = self._parse_region(params.get("region") or "")
         kwargs = {"sim": sim, "priority_corner": corner}
-        if (x1, y1, x2, y2) != (-1, -1, -1, -1):
+        if region is not None:
+            x1, y1, x2, y2 = region
             kwargs.update({"x1": x1, "y1": y1, "x2": x2, "y2": y2})
         return self.op.找图(**kwargs)
 
     def _do_find_text(self, params: dict) -> Optional[dict]:
         target = (params.get("target") or "").strip()
         use_regex = bool(params.get("use_regex", False))
-        x1, y1, x2, y2 = self._parse_region(params.get("region") or "")
+        region = self._parse_region(params.get("region") or "")
         kwargs = {}
         if target:
             kwargs["target_txt"] = target
             kwargs["use_regex"] = use_regex
-        if (x1, y1, x2, y2) != (-1, -1, -1, -1):
+        if region is not None:
+            x1, y1, x2, y2 = region
             kwargs.update({"x1": x1, "y1": y1, "x2": x2, "y2": y2})
         return self.op.找字(**kwargs)
 

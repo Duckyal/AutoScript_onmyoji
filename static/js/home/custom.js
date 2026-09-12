@@ -40,16 +40,16 @@ const STEP_TYPES = [
       { key: "sim", label: "相似度 (0-1)", type: "number", default: 0.9, step: 0.01, min: 0, max: 1 },
       { key: "corner", label: "角优先度", type: "select", default: "tl",
         options: [["tl","左上"], ["tr","右上"], ["bl","左下"], ["br","右下"]] },
-      { key: "region", label: "区域（可选，x1,y1,x2,y2 比例或绝对，留空=全屏）",
-        type: "text", placeholder: "例如 0.5,0,-1,-1 或 -1,-1,-1,-1" }
+      { key: "region", label: "区域（可选，x1,y1,x2,y2 均为 0~1 比例，留空=全屏）",
+        type: "text", placeholder: "例如 0.5,0,1,1（只搜右半屏）" }
     ]},
   { value: "find_text", label: "3b. 找字(OCR，结果存到 $last_find)", group: "识别",
     params: [
       { key: "target", label: "目标文本（支持正则，留空则返回全部文字）",
         type: "text", placeholder: "例如：准备 / 或用正则 \\d+/30" },
       { key: "use_regex", label: "使用正则匹配", type: "checkbox", default: false },
-      { key: "region", label: "区域（可选，留空=全屏，y1=0.5 表示上半屏不搜）",
-        type: "text", placeholder: "例如 -1,0.5,-1,-1" }
+      { key: "region", label: "区域（可选，均为 0~1 比例，留空=全屏，y1=0.5 表示只搜下半屏）",
+        type: "text", placeholder: "例如 0,0.5,1,1" }
     ]},
   // --- 条件分支（用户可以在 if_match / if_not_match 里做动作）---
   { value: "if_match", label: "3c. 条件分支（判断上一步找图/找字是否命中）", group: "判断", isContainer: true,

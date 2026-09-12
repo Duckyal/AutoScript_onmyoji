@@ -15,10 +15,12 @@
 #   2. 安装 uv：官方 install.sh 为主；若官方脚本网络失败（403/超时），
 #      回退从 GitHub release 下载静态二进制（含 ghfast.top 加速镜像）
 #   3. git clone KaguraX 到 /root/app（已存在则跳过；
-#      GitHub 直连失败时依次尝试加速镜像，浅克隆 --depth 1）
+#      GitHub 直连失败时依次尝试加速镜像，浅克隆 --depth 1；
+#      Termux home 的 repo_branch.txt 记录了分支时（App「切换分支」写入）克隆该分支）
 #   4. cd /root/app && uv sync（uv 会自动下载满足 pyproject.toml 的独立 Python）
-#   5. 把最新 commit SHA 写入 ~/repo_version.txt（Termux home，App 用 Java
-#      File API 读取做更新检测；proot 容器可访问该路径）
+#   5. 把最新 commit SHA 写入 ~/repo_version.txt、当前分支写入 ~/repo_branch.txt
+#      （Termux home，App 用 Java File API 读取做更新检测与分支显示；
+#       proot 容器可访问该路径）
 #
 # 全部命令成功才算初始化完成：set -e 保证任一步失败立即中止并打印出错点。
 #
@@ -221,6 +223,25 @@ MIRROR_EOF
   # ---------- 3. 克隆项目仓库到 /root/app（已存在则跳过） ----------
   #    GitHub 直连国内不稳定，失败时依次尝试 ghfast.top / gh-proxy.com 加速镜像；
   #    浅克隆（--depth 1）减少传输量。
+  #    分支：App 的「切换分支」会把分支名写入 Termux home 的 repo_branch.txt，这里按它
+  #    clone / 同步，便于在手机上直接初始化出 dev 等分支；文件缺失或名字含非法字符时用默认分支。
+  #    case 的字符类已排除空格与 shell 元字符，避免脏数据被拼进 git 命令。
+  KX_BRANCH_FILE=/data/data/duckyal.KaguraX/files/home/repo_branch.txt
+  KX_BRANCH=""
+  if [ -f "$KX_BRANCH_FILE" ]; then
+    KX_BRANCH=$(head -n 1 "$KX_BRANCH_FILE" 2>/dev/null | tr -d " \r\n")
+    case "$KX_BRANCH" in
+      ""|*[!A-Za-z0-9._/-]*|[-/]*|*..*|*//*|*.) KX_BRANCH="" ;;
+    esac
+    [ -n "$KX_BRANCH" ] && echo "[init_container] 检测到分支记录, 将使用分支: $KX_BRANCH"
+  fi
+  # 可选参数单独放变量：有合法分支才带上 -b 分支名（空则克隆仓库默认分支）
+  if [ -n "$KX_BRANCH" ]; then
+    CLONE_BRANCH_ARGS="-b $KX_BRANCH"
+  else
+    CLONE_BRANCH_ARGS=""
+  fi
+
   if [ ! -d /root/app ]; then
     CLONE_OK=0
     for url in \
@@ -228,13 +249,23 @@ MIRROR_EOF
       "https://ghfast.top/https://github.com/Duckyal/KaguraX" \
       "https://gh-proxy.com/https://github.com/Duckyal/KaguraX"; do
       echo "[init_container] git clone 尝试: $url"
-      if git clone --depth 1 "$url" /root/app; then
+      # shellcheck disable=SC2086
+      if git clone --depth 1 $CLONE_BRANCH_ARGS "$url" /root/app; then
         CLONE_OK=1
         break
       fi
       echo "[init_container] 该源克隆失败，换下一个镜像..."
     done
     [ "$CLONE_OK" != "1" ] && { echo "[init_container] 所有源均克隆失败，初始化中止"; exit 1; }
+  elif [ -n "$KX_BRANCH" ]; then
+    # 仓库已存在且记录过分支: 切到该分支并同步最新(失败不中止, 保留现有代码继续 uv sync)
+    echo "[init_container] /root/app 已存在，同步分支 $KX_BRANCH ..."
+    if (cd /root/app && git fetch --depth 1 origin "$KX_BRANCH" \
+        && git checkout -f -B "$KX_BRANCH" FETCH_HEAD); then
+      echo "[init_container] 代码已同步到分支 $KX_BRANCH"
+    else
+      echo "[init_container] 分支同步失败(网络?)，保留现有代码继续..."
+    fi
   else
     # 仓库已存在(重跑初始化): 同步最新代码, 避免旧 pyproject.toml/uv.lock 残留导致
     # 依赖解析到早已下架的包(如 opencv-python==5.0.0.93)。fetch/reset 失败不中止,
@@ -294,8 +325,10 @@ MIRROR_EOF
     fi
   fi
 
-  # ---------- 5. 记录版本：最新 commit SHA 写入 Termux home 的版本文件 ----------
+  # ---------- 5. 记录版本：commit SHA + 当前分支写入 Termux home ----------
+  #    App 读 repo_version.txt 做「是否有新提交」对比，读 repo_branch.txt 显示当前分支。
   git rev-parse HEAD > /data/data/duckyal.KaguraX/files/home/repo_version.txt
+  git rev-parse --abbrev-ref HEAD > /data/data/duckyal.KaguraX/files/home/repo_branch.txt
 
   echo "[init_container] 初始化完成!项目已就绪,可以点「启动项目」运行。"
 ' 2>&1 | tee "$HOME/init_run.log" || {

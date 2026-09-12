@@ -9,6 +9,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,9 +25,13 @@ import com.termux.BuildConfig;
  * 检测两部分（互不影响，各自失败只影响各自结果）：
  *
  * 1. 项目代码（容器内 /root/app）：
- *    - 本地版本记录 ~/repo_version.txt 保存项目仓库当前 commit SHA
- *      （由 init_container.sh / 更新命令在安装完成后写入）。
- *    - 请求 GitHub API 获取最近 20 个提交，对比本地 SHA 之后的提交 = 新提交。
+ *    - 本地版本记录 ~/repo_version.txt 保存项目仓库当前 commit SHA，
+ *      分支记录 ~/repo_branch.txt 保存当前 git 分支
+ *      （两者均由 init_container.sh / 更新命令在安装或更新完成后写入）。
+ *    - 请求 GitHub API 获取最近 20 个提交（sha=<所选分支>），
+ *      对比本地 SHA 之后的提交 = 新提交。
+ *    - 分支可切换（listBranches 拉取分支列表 + isValidBranchName 校验），
+ *      便于在手机上直接更新到 dev 等分支测试分支代码。
  *
  * 2. App（APK 本身）：
  *    - 请求 GitHub Releases API（releases/latest），仅当最新 Release 带 .apk asset
@@ -47,9 +52,16 @@ public final class UpdateChecker {
     /** 项目仓库名 */
     public static final String REPO_NAME = "KaguraX";
 
-    /** GitHub API：获取最近 20 条提交（按时间从新到旧排列） */
+    /** 默认更新分支：用户未选择过、或本地记录非法时用它 */
+    public static final String DEFAULT_BRANCH = "main";
+
+    /** GitHub API：获取最近 20 条提交（按时间从新到旧排列）；请求时追加 &sha=<分支> */
     private static final String COMMITS_API_URL =
             "https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME + "/commits?per_page=20";
+
+    /** GitHub API：分支名列表（供「切换分支」选择） */
+    private static final String BRANCHES_API_URL =
+            "https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME + "/branches?per_page=100";
 
     /** GitHub API：获取最新 Release（用于 APK 版本检测） */
     private static final String LATEST_RELEASE_API_URL =
@@ -58,6 +70,14 @@ public final class UpdateChecker {
     /** 本地版本记录文件（Termux home 下，App 用 Java File API 直接读写） */
     public static final String VERSION_FILE_PATH =
             "/data/data/duckyal.KaguraX/files/home/repo_version.txt";
+
+    /**
+     * 本地分支记录文件（Termux home 下，与 VERSION_FILE_PATH 同理）：
+     * 容器内的更新命令 / 初始化脚本写入「当前 git 分支」，App 读它作为分支选择的默认值，
+     * 初始化脚本也按它决定 git clone 哪个分支。
+     */
+    public static final String BRANCH_FILE_PATH =
+            "/data/data/duckyal.KaguraX/files/home/repo_branch.txt";
 
     /** 连接/读取超时（毫秒） */
     private static final int TIMEOUT_MS = 15000;
@@ -84,6 +104,9 @@ public final class UpdateChecker {
      * 一次检测的完整结果（成功/失败、本地 SHA、新提交列表、APK 版本）。
      */
     public static class CheckResult {
+        /** 本次检测针对的远程分支（main / dev 等） */
+        public String branch = DEFAULT_BRANCH;
+
         /** 项目检测是否成功（false 时看 rateLimited 区分原因） */
         public boolean success;
 
@@ -115,18 +138,27 @@ public final class UpdateChecker {
     }
 
     /**
-     * 执行一次完整检测（网络操作，必须在子线程调用）。
-     *
-     * @return 检测结果；任何一步失败都会体现在 success=false 上，不会抛异常。
+     * 兼容入口：按默认分支（main）检测。
      */
     public static CheckResult check() {
+        return check(DEFAULT_BRANCH);
+    }
+
+    /**
+     * 执行一次完整检测（网络操作，必须在子线程调用）。
+     *
+     * @param branch 要检测的远程分支（如 main / dev）；为空或名字非法时回落到 DEFAULT_BRANCH
+     * @return 检测结果；任何一步失败都会体现在 success=false 上，不会抛异常。
+     */
+    public static CheckResult check(String branch) {
         CheckResult result = new CheckResult();
+        result.branch = sanitizeBranch(branch);
 
         // 1. 读取本地版本记录
         result.localSha = readLocalSha();
 
-        // 2. 请求 GitHub API 获取提交列表
-        String json = requestCommitsJson(result);
+        // 2. 请求 GitHub API 获取提交列表（按所选分支，否则会拿默认分支的提交来对比）
+        String json = requestCommitsJson(result, result.branch);
         if (json == null) {
             return result;  // success 已在 requestCommitsJson 中置为 false
         }
@@ -156,12 +188,24 @@ public final class UpdateChecker {
 
     /** 读取本地版本记录文件中的 SHA；无文件或内容为空返回 null（视为未安装） */
     private static String readLocalSha() {
-        File file = new File(VERSION_FILE_PATH);
+        return readFirstLine(new File(VERSION_FILE_PATH));
+    }
+
+    /**
+     * 读取容器内记录的当前分支（~/repo_branch.txt）；无文件/为空返回 null。
+     * 该文件由容器内更新命令与初始化脚本写入（git rev-parse --abbrev-ref HEAD）。
+     */
+    public static String readLocalBranch() {
+        return readFirstLine(new File(BRANCH_FILE_PATH));
+    }
+
+    /** 读取文件第一行非空内容；文件不存在、为空、读取失败一律返回 null */
+    private static String readFirstLine(File file) {
         if (!file.isFile()) {
-            return null;    // 文件不存在 = 从未记录过版本 = 未安装
+            return null;    // 文件不存在 = 从未记录过
         }
 
-        // try-with-resources 逐行读取，取第一行非空内容作为 SHA
+        // try-with-resources 逐行读取，取第一行非空内容
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
             String line;
@@ -173,20 +217,93 @@ public final class UpdateChecker {
             }
             return null;    // 文件为空
         } catch (IOException e) {
-            return null;    // 读取失败保守处理：按未安装对待，不崩溃
+            return null;    // 读取失败保守处理，不崩溃
         }
     }
 
     /**
-     * 请求 GitHub API，返回响应体 JSON 字符串。
+     * 校验分支名能否安全用作 git 参数。
+     * 只允许字母数字与 . _ - /，且不以 - 或 / 开头、不以 / 或 . 结尾、不含 ".." 与 "//"。
+     *
+     * 这一步是安全边界：分支名会被拼进容器内的 shell 命令（git fetch / git checkout），
+     * 若放行空格、$、引号、; 等字符，等于给命令注入开了口子。
+     */
+    public static boolean isValidBranchName(String branch) {
+        if (branch == null) return false;
+        String name = branch.trim();
+        if (name.isEmpty() || name.length() > 100) return false;
+        if (name.startsWith("-") || name.startsWith("/")) return false;
+        if (name.endsWith("/") || name.endsWith(".")) return false;
+        if (name.contains("..") || name.contains("//")) return false;
+
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            boolean allowed = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9')
+                    || c == '.' || c == '_' || c == '-' || c == '/';
+            if (!allowed) return false;
+        }
+        return true;
+    }
+
+    /** 归一化分支名：非法/为空时返回 DEFAULT_BRANCH，保证后续 git 命令拿到的总是安全值 */
+    public static String sanitizeBranch(String branch) {
+        return isValidBranchName(branch) ? branch.trim() : DEFAULT_BRANCH;
+    }
+
+    /**
+     * 拉取远端分支名列表（供「切换分支」选择）。
+     * 网络/接口失败返回 null（调用方据此提示），成功但无分支返回空列表。
+     */
+    public static List<String> listBranches() {
+        HttpURLConnection conn = null;
+        try {
+            URL url = new URL(BRANCHES_API_URL);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(TIMEOUT_MS);
+            conn.setReadTimeout(TIMEOUT_MS);
+            conn.setRequestMethod("GET");
+            // 同 commits 接口：GitHub API 强制要求 User-Agent，否则 403
+            conn.setRequestProperty("User-Agent", "KaguraX-Manager");
+            conn.setRequestProperty("Accept", "application/vnd.github+json");
+
+            if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                return null;    // 403 限流 / 其它错误码：一律按「取不到」处理
+            }
+
+            JSONArray array;
+            try (InputStream in = conn.getInputStream()) {
+                array = new JSONArray(readStream(in));
+            }
+            List<String> names = new ArrayList<>();
+            for (int i = 0; i < array.length(); i++) {
+                String name = array.getJSONObject(i).optString("name", "").trim();
+                // 顺带过滤不合规名字，避免列表里出现无法安全使用的分支
+                if (isValidBranchName(name)) {
+                    names.add(name);
+                }
+            }
+            return names;
+        } catch (Exception e) {
+            return null;    // 网络异常 / JSON 结构异常：统一返回 null
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
+    /**
+     * 请求 GitHub API 获取指定分支的提交列表，返回响应体 JSON 字符串。
      * 失败时把结果写入 result 并返回 null：
      *   - HTTP 403 → rateLimited = true（限流）
      *   - 其它非 200 / 网络异常 → success = false（一般网络错误）
      */
-    private static String requestCommitsJson(CheckResult result) {
+    private static String requestCommitsJson(CheckResult result, String branch) {
         HttpURLConnection conn = null;
         try {
-            URL url = new URL(COMMITS_API_URL);
+            // branch 已由 sanitizeBranch 校验（只含字母数字与 . _ - /），再 URL 编码一次更稳
+            URL url = new URL(COMMITS_API_URL + "&sha=" + URLEncoder.encode(branch, "UTF-8"));
             conn = (HttpURLConnection) url.openConnection();
             conn.setConnectTimeout(TIMEOUT_MS);
             conn.setReadTimeout(TIMEOUT_MS);

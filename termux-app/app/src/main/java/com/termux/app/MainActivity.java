@@ -7,14 +7,18 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.text.InputType;
 import android.util.Log;
 import android.widget.Button;
+import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import com.termux.shared.android.PermissionUtils;
@@ -28,6 +32,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.ArrayList;
 import java.util.List;
 
 import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences;
@@ -111,6 +116,12 @@ public class MainActivity extends Activity {
 
     /** 底部「一键初始化」按钮（容器未安装时可用） */
     private Button btnInit;
+
+    /** 「更新分支」偏好存储：App 私有，记住用户选择要更新的分支（如 dev，便于在手机上测分支代码） */
+    private static final String UPDATE_PREFS_NAME = "update_prefs";
+
+    /** 偏好中「更新分支」的 key */
+    private static final String KEY_UPDATE_BRANCH = "update_branch";
 
     /** 底部「检查更新」按钮 */
     private Button btnCheckUpdate;
@@ -315,6 +326,12 @@ public class MainActivity extends Activity {
         btnProject.setOnClickListener(v -> toggleProject());
         btnInit.setOnClickListener(v -> startInit());
         btnCheckUpdate.setOnClickListener(v -> checkUpdate());
+        // 长按「检查更新」= 直接选择更新分支（如切到 dev 测试分支代码）；
+        // 「已是最新」时没有弹窗可跳，这条入口保证任何时候都能切分支。
+        btnCheckUpdate.setOnLongClickListener(v -> {
+            showBranchPickerDialog();
+            return true;    // 消费长按，避免松手后又触发一次点击检查
+        });
     }
 
     // ==================== 右上角「终端」按钮 ====================
@@ -607,6 +624,10 @@ public class MainActivity extends Activity {
             return;
         }
 
+        // 用户选过更新分支时，先把分支写入 ~/repo_branch.txt：
+        // 容器内 init_container.sh 会按它 git clone 对应分支，避免初始化出来的仍是默认分支。
+        syncBranchRecordBeforeInit();
+
         // 立即禁用按钮，防止初始化会话期间重复点击
         btnInit.setEnabled(false);
         btnInit.setText(R.string.action_init_running);
@@ -825,6 +846,61 @@ public class MainActivity extends Activity {
 
     // ==================== 底部「检查更新」按钮 ====================
 
+    // ---------- 更新分支的选择与持久化 ----------
+
+    /** 用户显式保存过的更新分支；从未选过返回 null */
+    private String getSavedUpdateBranch() {
+        SharedPreferences prefs = getSharedPreferences(UPDATE_PREFS_NAME, MODE_PRIVATE);
+        String saved = prefs.getString(KEY_UPDATE_BRANCH, null);
+        return (saved != null && !saved.trim().isEmpty()) ? saved.trim() : null;
+    }
+
+    /**
+     * 当前生效的更新分支，优先级：
+     *   1. 用户在 App 里选过 → 用它（可随时切换，便于在手机上测分支代码）
+     *   2. 容器内记录的分支（~/repo_branch.txt，由更新命令/初始化脚本写入）
+     *   3. 仓库默认分支 main
+     */
+    private String getUpdateBranch() {
+        String saved = getSavedUpdateBranch();
+        if (saved != null) return saved;
+
+        String local = UpdateChecker.readLocalBranch();
+        if (local != null && UpdateChecker.isValidBranchName(local)) return local;
+
+        return UpdateChecker.DEFAULT_BRANCH;
+    }
+
+    /** 保存用户选择的分支，并同步写入容器内记录文件（初始化脚本据此 clone 分支） */
+    private void setUpdateBranch(String branch) {
+        String safe = UpdateChecker.sanitizeBranch(branch);
+        getSharedPreferences(UPDATE_PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(KEY_UPDATE_BRANCH, safe)
+                .apply();
+        writeBranchRecordFile(safe);
+    }
+
+    /**
+     * 把分支写入 ~/repo_branch.txt（Termux home，App 私有目录，可直接写）。
+     * 与容器内脚本共用该文件：初始化脚本按它 clone 分支，更新命令按它记录当前分支。
+     */
+    private void writeBranchRecordFile(String branch) {
+        try (FileWriter writer = new FileWriter(UpdateChecker.BRANCH_FILE_PATH, false)) {
+            writer.write(branch + "\n");
+        } catch (IOException e) {
+            Log.w(LOG_TAG, "写入分支记录失败: " + e.getMessage());
+        }
+    }
+
+    /** 初始化前同步分支记录：只在用户显式选过分支时写，避免覆盖容器内已有记录 */
+    private void syncBranchRecordBeforeInit() {
+        String saved = getSavedUpdateBranch();
+        if (saved != null && UpdateChecker.isValidBranchName(saved)) {
+            writeBranchRecordFile(saved);
+        }
+    }
+
     /**
      * 「检查更新」按钮入口。
      * 子线程做网络检测（HttpURLConnection 请求 GitHub API），
@@ -845,10 +921,11 @@ public class MainActivity extends Activity {
         runCheckUpdate();
     }
 
-    /** 统一的检测流程：子线程检测 + 主线程分发结果 */
+    /** 统一的检测流程：子线程按「当前更新分支」检测 + 主线程分发结果 */
     private void runCheckUpdate() {
+        final String branch = getUpdateBranch();
         new Thread(() -> {
-            final UpdateChecker.CheckResult result = UpdateChecker.check();
+            final UpdateChecker.CheckResult result = UpdateChecker.check(branch);
             mainHandler.post(() -> handleUpdateResult(result));
         }).start();
     }
@@ -892,9 +969,10 @@ public class MainActivity extends Activity {
             return;
         }
 
-        // 4. 项目有新提交 → 弹「更新项目」窗；否则已是最新
+        // 4. 项目有新提交 → 弹「更新项目」窗；否则已是最新（都带上当前分支，便于确认在测哪个分支）
         if (result.newCommits.isEmpty()) {
-            Toast.makeText(this, R.string.update_up_to_date, Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.update_up_to_date, result.branch),
+                    Toast.LENGTH_SHORT).show();
         } else {
             showUpdateDialog(result);
         }
@@ -917,15 +995,15 @@ public class MainActivity extends Activity {
     /**
      * App 与项目同时有新版本时的合并弹窗（App 优先）：
      *   标题「发现新版 App（项目同步更新）」
-     *   内容：App 当前/最新版本 + 项目新提交清单
+     *   内容：App 当前/最新版本 + 项目新提交清单（含当前要更新的分支）
      *   按钮：主按钮「下载最新 App」→ 系统浏览器下载（优先引导装新版 App），
-     *         副按钮「仅更新项目」→ 终端里 git pull + uv sync，
+     *         副按钮「仅更新项目」→ 终端里按所选分支 git fetch/checkout + uv sync，
      *         「暂不」→ 关闭
      */
     private void showAppFirstDialog(UpdateChecker.CheckResult result) {
         String message = getString(R.string.update_app_first_message,
                 result.apkLocalVersion, result.apkLatestVersion,
-                result.newCommits.size(), buildCommitListText(result.newCommits));
+                result.newCommits.size(), buildCommitListText(result.newCommits), result.branch);
         new AlertDialog.Builder(this)
                 .setTitle(R.string.update_app_first_title)
                 .setMessage(message)
@@ -941,24 +1019,27 @@ public class MainActivity extends Activity {
     /**
      * 只有项目有新版本时弹 AlertDialog：
      *   标题「发现新版本」
-     *   内容：从新到旧列出所有新提交，格式「• 描述 (yyyy-MM-dd)\n  sha」
-     *   按钮「更新」「暂不」
+     *   内容：当前更新分支 + 从新到旧列出所有新提交（「• 描述 (yyyy-MM-dd)\n  sha」）
+     *   按钮「更新」「切换分支」「暂不」
      */
     private void showUpdateDialog(UpdateChecker.CheckResult result) {
         String message = getString(R.string.update_available_message,
-                result.newCommits.size(), buildCommitListText(result.newCommits));
+                result.branch, result.newCommits.size(), buildCommitListText(result.newCommits));
         new AlertDialog.Builder(this)
                 .setTitle(R.string.update_available_title)
                 .setMessage(message)
                 .setPositiveButton(R.string.update_button_now,
                         (dialog, which) -> performUpdate())
+                // 副操作：切换要拉取的分支（如 dev），切换后立刻按新分支重新检测
+                .setNeutralButton(R.string.update_branch_switch,
+                        (dialog, which) -> showBranchPickerDialog())
                 .setNegativeButton(R.string.update_button_later, null)
                 .setCancelable(true)
                 .show();
     }
 
     /**
-     * 只有 APK 更新时的弹窗：显示当前/最新版本，提供「下载 APK」。
+     * 只有 APK 更新时的弹窗：显示当前/最新版本，提供「下载 APK」和「切换分支」。
      */
     private void showApkUpdateDialog(UpdateChecker.CheckResult result) {
         String message = getString(R.string.update_apk_message,
@@ -968,9 +1049,106 @@ public class MainActivity extends Activity {
                 .setMessage(message)
                 .setPositiveButton(R.string.update_apk_download,
                         (dialog, which) -> openApkDownload(result.apkDownloadUrl))
+                // 项目更新入口在这类弹窗里没有，切换分支仍要给到（便于下次更新项目时用 dev）
+                .setNeutralButton(R.string.update_branch_switch,
+                        (dialog, which) -> showBranchPickerDialog())
                 .setNegativeButton(R.string.update_button_later, null)
                 .setCancelable(true)
                 .show();
+    }
+
+    // ==================== 更新分支选择（便于在手机上测试分支代码） ====================
+
+    /**
+     * 打开分支选择：子线程拉远端分支列表，回到主线程弹单选列表。
+     * 拉取失败（无网/限流）不阻断，直接转手动输入分支名。
+     */
+    private void showBranchPickerDialog() {
+        Toast.makeText(this, R.string.update_branch_loading, Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            final List<String> branches = UpdateChecker.listBranches();
+            mainHandler.post(() -> {
+                if (branches == null) {
+                    Toast.makeText(this, R.string.update_branch_fetch_failed, Toast.LENGTH_SHORT).show();
+                    showCustomBranchDialog(getUpdateBranch());
+                    return;
+                }
+                showBranchListDialog(getUpdateBranch(), branches);
+            });
+        }).start();
+    }
+
+    /**
+     * 分支单选列表：远端分支 + 保证「当前分支」「默认分支」一定在列表里，
+     * 末尾追加「自定义输入…」。
+     */
+    private void showBranchListDialog(String current, List<String> remoteBranches) {
+        List<String> candidates = new ArrayList<>(remoteBranches);
+        if (!candidates.contains(current)) {
+            candidates.add(0, current);       // 当前分支（可能已删除/未出现在接口里）放最前
+        }
+        if (!candidates.contains(UpdateChecker.DEFAULT_BRANCH)) {
+            candidates.add(UpdateChecker.DEFAULT_BRANCH);
+        }
+
+        final String[] items = new String[candidates.size() + 1];
+        for (int i = 0; i < candidates.size(); i++) {
+            String name = candidates.get(i);
+            items[i] = name.equals(current) ? "✓ " + name : name;   // 当前分支打勾
+        }
+        items[items.length - 1] = getString(R.string.update_branch_custom);
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.update_branch_title)
+                .setItems(items, (dialog, which) -> {
+                    if (which == items.length - 1) {
+                        showCustomBranchDialog(current);
+                    } else {
+                        applyUpdateBranch(candidates.get(which));
+                    }
+                })
+                .setNegativeButton(R.string.update_button_later, null)
+                .show();
+    }
+
+    /** 手动输入分支名（列表取不到或想用列表外的分支时） */
+    private void showCustomBranchDialog(String current) {
+        final EditText input = new EditText(this);
+        input.setSingleLine(true);
+        // 分支名是英文：用 URI 变体键盘（偏英文、无联想），避免中文输入法直接输入出非法名字
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        input.setHint(R.string.update_branch_custom_hint);
+        input.setText(current);
+        input.setSelection(input.getText().length());   // 光标置尾，方便直接续写或删除
+
+        // Builder 只有 setView(View) 这一个重载（没有带 padding 的版本）：
+        // 外面套一层容器做左右留白，避免输入框贴到弹窗边缘
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        FrameLayout container = new FrameLayout(this);
+        container.setPadding(pad, pad / 2, pad, 0);
+        container.addView(input);
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.update_branch_custom_title)
+                .setView(container)
+                .setPositiveButton(R.string.common_confirm, (dialog, which) -> {
+                    String branch = input.getText().toString().trim();
+                    if (!UpdateChecker.isValidBranchName(branch)) {
+                        Toast.makeText(this, R.string.update_branch_invalid, Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    applyUpdateBranch(branch);
+                })
+                .setNegativeButton(R.string.update_button_later, null)
+                .show();
+    }
+
+    /** 保存分支选择 → 同步容器记录文件 → 立刻按新分支重新检测更新 */
+    private void applyUpdateBranch(String branch) {
+        setUpdateBranch(branch);
+        String saved = getUpdateBranch();
+        Toast.makeText(this, getString(R.string.update_branch_saved, saved), Toast.LENGTH_SHORT).show();
+        runCheckUpdate();
     }
 
     /**
@@ -989,36 +1167,50 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * 执行更新：新开会话（用户可见进度）执行（严格按 spec）：
+     * 执行更新：新开会话（用户可见进度）在容器内执行：
      *   cd /root/app && export PATH="$HOME/.local/bin:$PATH" &&
-     *   git pull && (which adb >/dev/null 2>&1 || (apt update && apt install -y adb)) && uv sync
-     * 全部成功后把最新 commit SHA 写回 ~/repo_version.txt（App 与脚本共用同一路径）。
+     *   git reset --hard HEAD && git fetch --depth 1 origin <分支> &&
+     *   git checkout -f -B <分支> FETCH_HEAD &&
+     *   (which adb >/dev/null 2>&1 || (apt update && apt install -y adb)) && uv sync
+     * 全部成功后把 commit SHA 写回 ~/repo_version.txt、分支名写回 ~/repo_branch.txt
+     * （两个文件都在 Termux home，App 用 Java File API 直接读）。
+     *
+     * 分支：默认 main，可在「切换分支」里改为 dev 等分支，便于在手机上测试分支代码；
+     * 分支名经 UpdateChecker.isValidBranchName 校验后才拼进命令（防命令注入）。
      *
      * 注意：
      *   - 命令整体通过 proot-distro login debian 在容器内执行，
      *     所以里面是容器语法（/root/app、apt）。
-     *   - repo_version.txt 用 Termux 绝对路径写入，
+     *   - 两个记录文件用 Termux 绝对路径写入，
      *     proot 容器可访问 /data/data/ 下的文件，App 才能用 Java API 读到。
      *   - Java 字符串里嵌 shell 单引号无需转义，双引号需转义为 \"。
      *   - 只安装 adb，不再装 scrcpy：Debian trixie 主源没有 scrcpy 包，
      *     且本项目用自带的 scrcpy-server.jar + app_process 投屏，不依赖系统 scrcpy。
      */
     private void performUpdate() {
+        // 分支名走 sanitizeBranch 兜底，确保拼进 shell 的一定是合法值
+        final String branch = UpdateChecker.sanitizeBranch(getUpdateBranch());
+
         // 更新前先 source proot_env.sh 自愈 proot 运行环境（libtalloc/PD_PROOT_BIN）
         String command = ". ~/proot_env.sh 2>/dev/null || true; proot-distro login debian -- bash -c '"
                 + "cd /root/app && export PATH=\"$HOME/.local/bin:$PATH\" && "
                 // git reset --hard：丢弃容器内本地未提交改动（如 uv sync 时产生的 uv.lock 变更），
-                // 否则 git pull 会因本地改动报 "would be overwritten by merge" 中止。/root/app 是纯代码副本，
+                // 否则切换分支/更新会因本地改动报 "would be overwritten by merge" 中止。/root/app 是纯代码副本，
                 // 无本地私有代码，未跟踪文件（运行配置等）不受影响。
                 + "git reset --hard HEAD && "
-                + "git pull && "
+                // 显式拉取所选分支并强制切过去：浅克隆下 FETCH_HEAD 即该分支最新提交，
+                // checkout -B 让本地分支一并指向它，等效「切分支 + 更新到最新」一步完成；
+                // 分支名写错时 fetch 直接失败，后续被 && 短路（终端能看到报错）。
+                + "git fetch --depth 1 origin " + branch + " && "
+                + "git checkout -f -B " + branch + " FETCH_HEAD && "
                 + "(which adb >/dev/null 2>&1 || (apt update && apt install -y adb)) && "
                 + "uv sync && "
-                + "git rev-parse HEAD > /data/data/duckyal.KaguraX/files/home/repo_version.txt"
+                + "git rev-parse HEAD > /data/data/duckyal.KaguraX/files/home/repo_version.txt && "
+                + "git rev-parse --abbrev-ref HEAD > /data/data/duckyal.KaguraX/files/home/repo_branch.txt"
                 + "'";
         // 会话名固定为 "update"，与 debian / project / init 会话分工明确
         TermuxRunner.run(this, command, true, "update", null);
-        Toast.makeText(this, R.string.update_started, Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(R.string.update_started, branch), Toast.LENGTH_SHORT).show();
     }
 
 }

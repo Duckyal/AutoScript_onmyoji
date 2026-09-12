@@ -10,6 +10,37 @@ from pathlib import Path
 
 router = APIRouter()
 
+
+def _region_value(v: str, default: float) -> float:
+    """把表单里的区域值解析成 0~1 比例。
+
+    空值 / 非法值 / 负数（旧版用 -1 表示“该边界未指定”）/ 大于 1 的值
+    （旧前端的像素语义，如 800）一律回退到默认边界——因为 ADB.找图 / 找字 /
+    获取截图 只认比例，这类值会被当成比例再乘屏幕宽高，坐标偏移会飞出屏幕。
+    """
+    try:
+        f = float(str(v).strip())
+    except (TypeError, ValueError):
+        return default
+    return f if 0.0 <= f <= 1.0 else default
+
+
+def _parse_region_str(raw: str):
+    """把脚本生成器里 "0.5,0,-1,-1" 这类区域字符串规范成 4 个 0~1 比例。
+
+    返回 None 表示“没填 / 解析不出 4 段”（生成的代码干脆不带区域参数）。
+    旧写法里的 -1 按所在位置归一化成 0 或 1，绝不原样生成到代码里——
+    否则 x2=-1 会被当成比例，坐标偏移直接错到屏幕外。
+    """
+    raw = (raw or "").strip()
+    if not raw or raw == "-1,-1,-1,-1":
+        return None
+    parts = [p.strip() for p in raw.split(",")]
+    if len(parts) != 4:
+        return None
+    return (_region_value(parts[0], 0.0), _region_value(parts[1], 0.0),
+            _region_value(parts[2], 1.0), _region_value(parts[3], 1.0))
+
 # --- 导入模块 ---
 from module import adb_stream
 from module.logmanager import ws_manager
@@ -196,32 +227,50 @@ async def find_image(
     image: UploadFile = File(None),
     sim: float = Form(0.90),
     priority_corner: str = Form('tl'),
-    x1: str = Form('-1'),
-    y1: str = Form('-1'),
-    x2: str = Form('-1'),
-    y2: str = Form('-1')
+    screen_width: str = Form(''),
+    screen_height: str = Form(''),
+    x1: str = Form('0'),
+    y1: str = Form('0'),
+    x2: str = Form('1'),
+    y2: str = Form('1')
 ):
-    try:
-        x1_val = float(x1) if '.' in x1 else int(x1)
-        y1_val = float(y1) if '.' in y1 else int(y1)
-        x2_val = float(x2) if '.' in x2 else int(x2)
-        y2_val = float(y2) if '.' in y2 else int(y2)
-    except ValueError:
-        x1_val = y1_val = x2_val = y2_val = -1
-    
+    # 区域一律 0~1 比例；-1 / 空值 / 非法值交给 _region_value 与 ADB._归一化区域 兜底成全屏
+    x1_val = _region_value(x1, 0.0)
+    y1_val = _region_value(y1, 0.0)
+    x2_val = _region_value(x2, 1.0)
+    y2_val = _region_value(y2, 1.0)
+
     device = ADB(device_name)
-    
+
     img_bytes = None
     if image and image.filename:
         img_bytes = await image.read()
-    
+
+    # 上传模板的基准分辨率（这张图是在多大分辨率下截的）：前端框选时传当前视频流分辨率、
+    # 上传本地文件时传文件名里的 _WxH；两者都没有就用当前设备分辨率兜底。
+    # 后端要靠“模板基准分辨率 vs 当前截图分辨率”算缩放比，决定该放大模板还是放大截图；
+    # 缺了它会退回默认基准 1920x1080，在非 1920 设备上走错匹配分支。
+    base_res = None
+    try:
+        if screen_width and screen_height:
+            base_res = (int(float(screen_width)), int(float(screen_height)))
+    except (TypeError, ValueError):
+        base_res = None
+    if base_res is None:
+        try:
+            if device.width and device.height:
+                base_res = (int(device.width), int(device.height))
+        except (TypeError, ValueError):
+            base_res = None
+
     # 同步耗时操作（截图/预加载/模板匹配）放入线程池，避免阻塞事件循环导致视频流卡住
     def _do_find_image():
         if img_bytes:
-            device.图片预加载(img_bytes)
+            device.图片预加载(img_bytes, base_resolution=base_res)
         else:
             main_img = device.获取截图(x1_val, y1_val, x2_val, y2_val)
-            device.图片预加载(main_img)
+            # 模板就是刚截的画面（区域图尺寸≠屏幕分辨率，基准要用屏幕分辨率），缩放比恰为 1.0
+            device.图片预加载(main_img, base_resolution=base_res)
         return device.找图(sim=sim, priority_corner=priority_corner, x1=x1_val, y1=y1_val, x2=x2_val, y2=y2_val)
     
     result = await asyncio.to_thread(_do_find_image)
@@ -234,25 +283,23 @@ async def ocr_text(
     image: UploadFile = File(None),
     target_txt: str = Form(''),
     use_regex: bool = Form(False),
-    x1: str = Form('-1'),
-    y1: str = Form('-1'),
-    x2: str = Form('-1'),
-    y2: str = Form('-1')
+    x1: str = Form('0'),
+    y1: str = Form('0'),
+    x2: str = Form('1'),
+    y2: str = Form('1')
 ):
-    try:
-        x1_val = float(x1) if '.' in x1 else int(x1)
-        y1_val = float(y1) if '.' in y1 else int(y1)
-        x2_val = float(x2) if '.' in x2 else int(x2)
-        y2_val = float(y2) if '.' in y2 else int(y2)
-    except ValueError:
-        x1_val = y1_val = x2_val = y2_val = -1
-    
+    # 区域一律 0~1 比例；-1 / 空值 / 非法值交给 _region_value 与 ADB._归一化区域 兜底成全屏
+    x1_val = _region_value(x1, 0.0)
+    y1_val = _region_value(y1, 0.0)
+    x2_val = _region_value(x2, 1.0)
+    y2_val = _region_value(y2, 1.0)
+
     device = ADB(device_name)
-    
+
     img_bytes = None
     if image and image.filename:
         img_bytes = await image.read()
-    
+
     # 同步耗时操作（OCR）放入线程池，避免阻塞事件循环导致视频流卡住
     def _do_ocr():
         if img_bytes:
@@ -574,24 +621,22 @@ def _steps_to_python(steps: list, indent: int = 4) -> str:
         elif typ == "find_image":
             sim = float(params.get("sim", 0.9))
             corner = params.get("corner", "tl")
-            region = params.get("region", "").strip()
-            if region and region != "-1,-1,-1,-1":
-                parts = [p.strip() for p in region.split(",")]
-                x1, y1, x2, y2 = (parts + ["-1"] * 4)[:4]
+            region = _parse_region_str(params.get("region", ""))
+            if region is not None:
+                x1, y1, x2, y2 = region
                 lines.append(f"{pad}_last = self.op.找图(sim={sim}, priority_corner=\"{corner}\", x1={x1}, y1={y1}, x2={x2}, y2={y2})")
             else:
                 lines.append(f"{pad}_last = self.op.找图(sim={sim}, priority_corner=\"{corner}\")")
         elif typ == "find_text":
             target = _s("target")
             use_regex = bool(params.get("use_regex", False))
-            region = params.get("region", "").strip()
+            region = _parse_region_str(params.get("region", ""))
             kwargs = []
             if target:
                 kwargs.append(f'target_txt="{target}"')
                 kwargs.append(f'use_regex={use_regex}')
-            if region and region != "-1,-1,-1,-1":
-                parts = [p.strip() for p in region.split(",")]
-                x1, y1, x2, y2 = (parts + ["-1"] * 4)[:4]
+            if region is not None:
+                x1, y1, x2, y2 = region
                 kwargs.append(f'x1={x1}, y1={y1}, x2={x2}, y2={y2}')
             lines.append(f"{pad}_last = self.op.找字({', '.join(kwargs)})")
         elif typ == "if_match":

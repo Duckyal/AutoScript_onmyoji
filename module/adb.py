@@ -118,7 +118,10 @@ class ADB():
 
         self.max_workers = max_workers  
         self.adapt_res_everytime = adapt_res_everytime
-        self.current_scale = None       # 全局缓存的手机分辨率缩放比
+        self.current_scale = None       # 参考分辨率组的缩放比（无基准信息模板的兜底值）
+        self.current_scale_x = None     # 每张模板各自持有 scale_x/scale_y；这两个是"参考组"的值
+        self.current_scale_y = None
+        self._scale_correction = (1.0, 1.0)  # 实测微调修正因子，叠加在每张模板的名义缩放比上
         self.cached_templates = {}      # 缓存所有模板图的灰度矩阵和原始尺寸
         # 每张模板的“上次命中”缓存：{img_name: {'x','y'(全屏绝对坐标),'w','h'(实测屏幕尺寸),'validated','miss'}}
         # 用于连续帧局部优先搜索 + 记录实测缩放，分辨率变化或重新预加载时清空
@@ -286,6 +289,10 @@ class ADB():
         构建模板金字塔，预先计算多个缩放级别的模板
         :param scale_range: 缩放范围 (min_scale, max_scale)
         :param steps: 缩放级别数量
+
+        注意：当前流程已不再预构建金字塔——预加载阶段为每张图做 11 次 resize 的开销
+        换不来等值收益；适配搜索改为按需精确 resize（更准、总耗时更低）。
+        本方法保留，供后续“粗定位再精匹配”的可选加速方案复用。
         """
         if img_name in self._pyramid_cache:
             return
@@ -312,7 +319,8 @@ class ADB():
     
     def _get_pyramid_template(self, img_name, scale_x, scale_y):
         """
-        从金字塔中获取最接近目标缩放的模板
+        从金字塔中获取最接近目标缩放的模板。
+        注意：当前流程不构建金字塔，正常调用会直接返回 None，调用方需自行 resize 兜底。
         """
         if img_name not in self._pyramid_cache:
             return None
@@ -374,16 +382,16 @@ class ADB():
         '''
         self.息屏()
 
-    def save_screenshot(self, save_path:str=adb_path, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1):
+    def save_screenshot(self, save_path:str=adb_path, x1:float=0, y1:float=0, x2:float=1.0, y2:float=1.0):
         '''
         save_path: 保存截图的路径，默认为 adb_path
-        x1, y1, x2, y2: 截图区域坐标，默认为 -1 表示全屏
+        x1, y1, x2, y2: 截图区域坐标，默认为全屏
         '''
         self.截图保存(save_path, x1, y1, x2, y2)
 
-    def get_screenshot(self, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1):
+    def get_screenshot(self, x1:float=0, y1:float=0, x2:float=1.0, y2:float=1.0):
         '''
-        x1, y1, x2, y2: 截图区域坐标，默认为 -1 表示全屏
+        x1, y1, x2, y2: 截图区域坐标，默认为全屏
         '''
         return self.获取截图(x1, y1, x2, y2)
     
@@ -439,16 +447,16 @@ class ADB():
         '''
         self.图片预加载(*images)
     
-    def find_image(self, sim=0.90, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1):
+    def find_image(self, sim=0.90, x1:float=0, y1:float=0, x2:float=1.0, y2:float=1.0):
         '''
         sim: 图片相似度，默认为 0.90
-        x1, y1, x2, y2: 截图区域坐标，默认为 -1 表示全屏
+        x1, y1, x2, y2: 截图区域坐标，默认为全屏, 范围为 0~1
         '''
         return self.找图(sim=sim, x1=x1, y1=y1, x2=x2, y2=y2)
     
-    def find_text(self, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1, Specified_image=None, target_txt:str='', use_regex: bool = False):
+    def find_text(self, x1:float=0, y1:float=0, x2:float=1.0, y2:float=1.0, Specified_image=None, target_txt:str='', use_regex: bool = False):
         '''
-        x1, y1, x2, y2: 截图区域坐标，默认为 -1 表示全屏
+        x1, y1, x2, y2: 截图区域坐标，默认为全屏，范围为 0~1
         Specified_image: 指定图片（如果不提供则使用当前截图）
         target_txt: 目标文本（如果不提供则返回所有文本框信息），支持正则表达式，返回值为匹配到的文本对应坐标或None
         use_regex: 是否启用正则匹配，默认为 False,;为True则返回值将为匹配到的文本列表，为False则返回匹配到的文本及其坐标
@@ -479,30 +487,16 @@ class ADB():
         self.log('已息屏', 'debug')
         self.重置定时器()
     
-    def 截图保存(self, save_path:str=adb_path, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1):
-        if x1 != -1:
-            x1 = int(self.height*x1) if isinstance(x1, float) else x1
-        else:
-            x1 = 0
-        if y1 != -1:
-            y1 = int(self.width*y1) if isinstance(y1, float) else y1
-        else:
-            y1 = 0
-
-        if x2 != -1:
-            x2 = int(self.height*x2) if isinstance(x2, float) else x2
-        else:
-            x2 = self.height
-        if y2 != -1:
-            y2 = int(self.width*y2) if isinstance(y2, float) else y2
-        else:
-            y2 = self.width
+    def 截图保存(self, save_path:str=adb_path, x1:float=0, y1:float=0, x2:float=1.0, y2:float=1.0):
+        x1, y1, x2, y2 = self._归一化区域(x1, y1, x2, y2)
+        x1, y1, x2, y2 = int(self.width*x1), int(self.height*y1), int(self.width*x2), int(self.height*y2)
             
         cv2.imwrite(save_path, self.d.screenshot(format='opencv')[y1:y2, x1:x2, :]) # type: ignore
         self.log('已保存截图到:{0}'.format(save_path), 'debug')
         self.重置定时器()
             
-    def 获取截图(self, x1:int|float=-1, y1:int|float=-1, x2:int|float=-1, y2:int|float=-1):
+    def 获取截图(self, x1:float=0, y1:float=0, x2:float=1.0, y2:float=1.0):
+        x1, y1, x2, y2 = self._归一化区域(x1, y1, x2, y2)
         img = self.d.screenshot(format='opencv')
         h, w = img.shape[:2]
         # 设备旋转/分辨率变化时自动校准缓存，避免按旧分辨率裁剪越界返回空图
@@ -517,23 +511,7 @@ class ADB():
             self._pyramid_cache.clear()
             # 分辨率变了，上一帧命中的位置/尺寸全部失效
             self._find_cache.clear()
-        if x1 != -1:
-            x1 = int(self.width*x1) if isinstance(x1, float) else x1
-        else:
-            x1 = 0
-        if y1 != -1:
-            y1 = int(self.height*y1) if isinstance(y1, float) else y1
-        else:
-            y1 = 0
-
-        if x2 != -1:
-            x2 = int(self.width*x2) if isinstance(x2, float) else x2
-        else:
-            x2 = self.width
-        if y2 != -1:
-            y2 = int(self.height*y2) if isinstance(y2, float) else y2
-        else:
-            y2 = self.height
+        x1, y1, x2, y2 = int(self.width*x1), int(self.height*y1), int(self.width*x2), int(self.height*y2)
 
         # 边界钳制，防止坐标越界导致 numpy 切片返回空图
         x1 = max(0, min(int(x1), w))
@@ -700,8 +678,36 @@ class ADB():
             h = int(match.group(2))
             return w, h
         return None, None
-    
-    def 图片预加载(self, *images):
+
+    @staticmethod
+    def _归一化区域(x1, y1, x2, y2):
+        """
+        把区域参数统一成 0~1 比例，越界值一律退化为“全屏边界”。
+
+        需要兜底的两种旧写法：
+          1. -1：旧版 /api/find_image 的默认值、前端未框选时的占位值，表示“未指定”；
+          2. 大于 1 的值：旧前端的像素语义（如 800）。
+        这类值被当成比例再乘屏幕宽高后，裁剪会因越界退化成全屏（看着“还能找到”），
+        但返回坐标会被加上一个巨大的偏移量（如 width*800），彻底错位。
+        起点越界 → 0，终点越界 → 1，最坏情况也只是退化成全屏搜索，不会给出错坐标。
+        """
+        def _start(v):
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                return 0.0
+            return v if 0.0 <= v <= 1.0 else 0.0
+
+        def _end(v):
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                return 1.0
+            return v if 0.0 <= v <= 1.0 else 1.0
+
+        return _start(x1), _start(y1), _end(x2), _end(y2)
+
+    def 图片预加载(self, *images, base_resolution=None):
         '''
         在进入 while 循环前，一次性把所有图片读入内存并转为灰度图。
         避免在 while 循环中频繁进行磁盘 I/O 和色彩空间转换。
@@ -713,102 +719,44 @@ class ADB():
             1. 图片路径字符串
             2. cv2 数组
             3. PIL 图片对象
+
+        性能说明（对比旧实现）：
+            1. 解码并发执行：读盘 + 解码都发生在 cv2 内部（释放 GIL），多线程有实际收益；
+            2. 模板金字塔改为延迟构建：只有分辨率适配的搜索真正用到时才建，
+               预加载阶段不再为每张 ≥50x50 的图做 11 次 resize；
+            3. 同名换图时一并清空 _pyramid_cache，避免拿旧图的金字塔去匹配新图。
         '''
         self.cached_templates.clear()
         self._find_cache.clear()     # 换了一批模板，旧的命中缓存（名称可能复用但图不同）一并作废
+        self._pyramid_cache.clear()  # 金字塔基于模板内容构建，模板换了必须重建，否则匹配的是旧图
         failed_count = 0
-        img_index = 0
-        for img in images:
-            check_stop(self)
-            gray_img = None
-            screen_width = None
-            screen_height = None
-            try:
-                if isinstance(img, str):
-                    if not os.path.exists(img) and self.mode == "more":
-                        self.log(f"警告：图片文件不存在 - {img}", 'warning')
+
+        if not images:
+            self.log("图片预加载：未传入任何图片", 'warning')
+            self.重置定时器()
+            return 0
+
+        # 并发解码：分批提交，保证两张图之间仍能响应停止指令（与原逐张 check_stop 的可中断性一致）
+        workers = min(8, max(1, len(images)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for start in range(0, len(images), workers):
+                check_stop(self)
+                batch = list(enumerate(images))[start:start + workers]
+                loaded = pool.map(lambda pair: self._load_template(pair[1], pair[0], base_resolution), batch)
+                for (idx, img), (img_name, temp_info, warn) in zip(batch, loaded):
+                    if img_name is None or temp_info is None:
+                        if warn:
+                            self.log(warn, 'warning')
                         failed_count += 1
                         continue
-                    img_name = os.path.basename(img)
-                    # 从文件名提取屏幕参数（格式：xxx_WxH.png）
-                    screen_width, screen_height = self._parse_screen_from_filename(img_name)
-                    # 用 np.fromfile + cv2.imdecode 替代 cv2.imread
-                    # 解决 Windows 下 cv2.imread 不支持中文路径的问题
-                    img_data = np.fromfile(img, dtype=np.uint8)
-                    gray_img = cv2.imdecode(img_data, cv2.IMREAD_GRAYSCALE)
-                    if gray_img is None:
-                        self.log(f"警告：图片读取失败 - {img}", 'warning')
-                        failed_count += 1
-                        continue
-                elif isinstance(img, bytes):
-                    img_name = f"uploaded_image_{img_index}"
-                    img_array = np.frombuffer(img, np.uint8)
-                    color_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-                    if color_img is not None:
-                        gray_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
-                    else:
-                        if self.mode == "more":
-                            self.log(f"警告：字节图片解码失败 - {img_name}", 'warning')
-                        failed_count += 1
-                        continue
-                elif isinstance(img, np.ndarray):
-                    img_name = f"cv2_array_{img_index}"
-                    if len(img.shape) == 2:
-                        gray_img = img
-                    else:
-                        gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                elif hasattr(img, 'read'):
-                    img_name = img.filename or "uploaded_image"
-                    img_bytes = img.read()
-                    img_array = np.frombuffer(img_bytes, np.uint8)
-                    color_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-                    if color_img is not None:
-                        gray_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
-                    else:
-                        if self.mode == "more":
-                            self.log(f"警告：上传图片解码失败 - {img_name}", 'warning')
-                        failed_count += 1
-                        continue
-                elif hasattr(img, 'tobytes'):
-                    img_name = f"pil_image_{img_index}"
-                    img_array = np.array(img)
-                    if len(img_array.shape) == 2:
-                        gray_img = img_array
-                    elif img_array.shape[2] == 4:
-                        gray_img = cv2.cvtColor(img_array, cv2.COLOR_RGBA2GRAY)
-                    else:
-                        gray_img = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-                else:
-                    if self.mode == "more":
-                        self.log(f"警告：不支持的图片类型 - {type(img)}", 'warning')
-                    failed_count += 1
-                    continue
-                
-                self.cached_templates[img_name] = {
-                    'img': gray_img,
-                    'h': gray_img.shape[0],
-                    'w': gray_img.shape[1],
-                    'screen_width': screen_width,
-                    'screen_height': screen_height
-                }
-                # 构建模板金字塔（仅对大于等于50x50的图构建）
-                if gray_img.shape[0] >= 50 and gray_img.shape[1] >= 50:
-                    self._build_pyramid(img_name, {
-                        'img': gray_img,
-                        'h': gray_img.shape[0],
-                        'w': gray_img.shape[1],
-                        'screen_width': screen_width,
-                        'screen_height': screen_height
-                    })
-                img_index += 1
-            except Exception as e:
-                self.log(f"警告：加载图片失败 - {img if isinstance(img, str) else type(img)}: {e}", 'warning')
-                failed_count += 1
-        
+                    self.cached_templates[img_name] = temp_info
+
         self.log(f"成功预加载了 {len(self.cached_templates)} 张模板图片。", 'debug')
         self.重置定时器()
         # 强制重新计算分辨率适配，确保缩放比例与当前屏幕匹配
-        self._adapt_resolution()       
+        self._adapt_resolution()
+        # 返回成功加载的张数（脚本生成器里写的是 n = 图片预加载(...)，此前恒为 None）
+        return len(self.cached_templates)
 
     def _match_by_orb(self, main_gray, img_name, temp_info, sim, offset_x=0, offset_y=0):
         '''
@@ -990,32 +938,204 @@ class ADB():
         bx, by = best[0], best[1]
         return int(bx + tw // 2) + offset_x, int(by + th // 2) + offset_y, float(max_val)
 
-    def _record_verified_sizes(self, sim, test_images, main_gray, w_main, h_main):
+    # 无基准分辨率信息时的默认基准（上传图、数组图、PIL 图都走这里）
+    DEFAULT_BASE_RESOLUTION = (1920, 1080)
+
+    def _load_template(self, img, img_index, base_resolution=None):
         """
-        记录本帧画面里“实测可匹配”的模板尺寸（预加载/适配阶段逐张验证过 ≥sim 的那批），
-        后续找图阶段即可跳过“原始直配 + ±5% 网格”的重兜底，按该实测尺寸整屏一次匹配。
-        只记录真正在真实截图上验证过的模板，避免对当前不可见的模板做无依据的缩放假设。
-        :return: 成功记录的数量
+        解码单张模板为灰度图（供 图片预加载 并发调用）。
+        :param base_resolution: 可选，(宽, 高)。仅当图片自身不带分辨率信息时（上传字节流、
+            cv2 数组、PIL 对象、文件名无 _WxH 后缀）作为模板基准分辨率，用于算缩放比与匹配方向
+        :return: (img_name, temp_info, warn_msg)；失败时 img_name 为 None，warn_msg 为提示语
         """
-        seed_count = 0
-        sx = self.current_scale_x
-        sy = self.current_scale_y
+        gray_img = None
+        screen_width = None
+        screen_height = None
+        img_name = None
+        try:
+            if isinstance(img, str):
+                if not os.path.exists(img) and self.mode == "more":
+                    return None, None, f"警告：图片文件不存在 - {img}"
+                img_name = os.path.basename(img)
+                # 从文件名提取屏幕参数（格式：xxx_WxH.png）
+                screen_width, screen_height = self._parse_screen_from_filename(img_name)
+                # 用 np.fromfile + cv2.imdecode 替代 cv2.imread
+                # 解决 Windows 下 cv2.imread 不支持中文路径的问题
+                img_data = np.fromfile(img, dtype=np.uint8)
+                gray_img = cv2.imdecode(img_data, cv2.IMREAD_GRAYSCALE)
+                if gray_img is None:
+                    return None, None, f"警告：图片读取失败 - {img}"
+            elif isinstance(img, bytes):
+                img_name = f"uploaded_image_{img_index}"
+                img_array = np.frombuffer(img, np.uint8)
+                color_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                if color_img is not None:
+                    gray_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
+                else:
+                    return None, None, f"警告：字节图片解码失败 - {img_name}"
+            elif isinstance(img, np.ndarray):
+                img_name = f"cv2_array_{img_index}"
+                if len(img.shape) == 2:
+                    gray_img = img
+                else:
+                    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            elif hasattr(img, 'read'):
+                img_name = img.filename or "uploaded_image"
+                # 上传接口会把来源设备分辨率拼进文件名（xxx_WxH.png），这里一并解析，
+                # 让上传的模板以自己的分辨率为基准，而不是一律套用默认基准
+                screen_width, screen_height = self._parse_screen_from_filename(img_name)
+                img_bytes = img.read()
+                img_array = np.frombuffer(img_bytes, np.uint8)
+                color_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                if color_img is not None:
+                    gray_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
+                else:
+                    return None, None, f"警告：上传图片解码失败 - {img_name}"
+            elif hasattr(img, 'tobytes'):
+                img_name = f"pil_image_{img_index}"
+                img_array = np.array(img)
+                if len(img_array.shape) == 2:
+                    gray_img = img_array
+                elif img_array.shape[2] == 4:
+                    gray_img = cv2.cvtColor(img_array, cv2.COLOR_RGBA2GRAY)
+                else:
+                    gray_img = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+            else:
+                return None, None, f"警告：不支持的图片类型 - {type(img)}"
+        except Exception as e:
+            return None, None, f"警告：加载图片失败 - {img if isinstance(img, str) else type(img)}: {e}"
+
+        # 图片自身不带分辨率信息时（上传字节流/数组图/PIL 图/文件名无 _WxH 后缀），
+        # 用调用方声明的来源分辨率兜底；否则会退回 DEFAULT_BASE_RESOLUTION(1920x1080)，
+        # 在非 1920 设备上缩放比算错，方向判据（截图分辨率 vs 模板基准）也跟着走错分支。
+        if base_resolution and (screen_width is None or screen_height is None):
+            try:
+                screen_width, screen_height = int(base_resolution[0]), int(base_resolution[1])
+            except (TypeError, ValueError, IndexError):
+                pass
+
+        temp_info = {
+            'img': gray_img,
+            'h': gray_img.shape[0],
+            'w': gray_img.shape[1],
+            'screen_width': screen_width,
+            'screen_height': screen_height,
+            # 名义缩放比 = 截图尺寸 / 该图自身基准分辨率；实际缩放比 = 名义比 × 修正因子
+            # 两者都在 _compute_template_scales 里统一填充（每张模板各算各的）
+            'scale_nominal_x': None,
+            'scale_nominal_y': None,
+            'scale_x': None,
+            'scale_y': None,
+        }
+        return img_name, temp_info, None
+
+    def _compute_template_scales(self, screenshot_w, screenshot_h,
+                                 correction_x=1.0, correction_y=1.0):
+        """
+        为每张模板按“自身文件名里的基准分辨率”计算缩放比。
+        彻底解决旧逻辑“只取第一张模板的分辨率当全库基准”导致其它基准的模板被错误缩放的问题。
+        无基准信息的模板（上传图/数组图）回退到默认基准 1920x1080。
+        顺带刷新全局参考比例（参考组 = 模板数量最多的基准组），供旧接口与无信息模板兜底。
+        :return: 参与计算的模板数
+        """
+        base_w, base_h = self.DEFAULT_BASE_RESOLUTION
+        groups = {}
+        for img_name, temp in self.cached_templates.items():
+            bw = temp.get('screen_width') or base_w
+            bh = temp.get('screen_height') or base_h
+            temp['scale_nominal_x'] = screenshot_w / bw
+            temp['scale_nominal_y'] = screenshot_h / bh
+            temp['scale_x'] = temp['scale_nominal_x'] * correction_x
+            temp['scale_y'] = temp['scale_nominal_y'] * correction_y
+            groups[(bw, bh)] = groups.get((bw, bh), 0) + 1
+
+        if not self.cached_templates:
+            return 0
+
+        # 参考组：模板数量最多的基准分辨率（并列时取先出现的），其缩放比写入 current_scale*
+        ref = max(groups.items(), key=lambda kv: kv[1])[0]
+        for temp in self.cached_templates.values():
+            if (temp.get('screen_width') or base_w,
+                    temp.get('screen_height') or base_h) == ref:
+                self.current_scale_x = temp['scale_x']
+                self.current_scale_y = temp['scale_y']
+                self.current_scale = (temp['scale_x'] + temp['scale_y']) / 2
+                break
+
+        if self.mode == "more":
+            group_desc = ", ".join(f"{w}x{h}:{c}张" for (w, h), c in groups.items())
+            self.log(f"基准分辨率分组 [{group_desc}]；参考组 {ref[0]}x{ref[1]} "
+                     f"scale=({self.current_scale_x:.4f},{self.current_scale_y:.4f})", 'debug')
+        return len(self.cached_templates)
+
+    def _verify_templates(self, sim, test_images, main_gray, w_main, h_main,
+                          correction_x=1.0, correction_y=1.0, record=True):
+        """
+        按“每张模板自身名义缩放比 × 修正因子”整屏验证一批模板。
+        一次遍历同时完成两件事：
+          1) 统计通过情况，供“当前比例是否可用”的决策（避免旧实现先全量验证、再全量记录算两遍）；
+          2) 把 ≥sim 的模板实测尺寸写入 _find_cache（validated），供找图阶段走快速路径。
+        :return: (success, total, total_score)
+        """
+        success = 0
+        total = 0
+        total_score = 0.0
+        base_w, base_h = self.DEFAULT_BASE_RESOLUTION
         for img_name in test_images:
             temp = self.cached_templates.get(img_name)
             if not temp or temp['w'] < 20 or temp['h'] < 20:
                 continue
-            tw = int(temp['w'] * sx)
-            th = int(temp['h'] * sy)
+            nominal_x = temp.get('scale_nominal_x')
+            nominal_y = temp.get('scale_nominal_y')
+            if nominal_x is None or nominal_y is None:
+                bw = temp.get('screen_width') or base_w
+                bh = temp.get('screen_height') or base_h
+                nominal_x, nominal_y = w_main / bw, h_main / bh
+            tw = int(temp['w'] * nominal_x * correction_x)
+            th = int(temp['h'] * nominal_y * correction_y)
             if tw > w_main or th > h_main or tw < 10 or th < 10:
                 continue
+            total += 1
             resized = self._resize_to_target(temp['img'], tw, th)
             result = cv2.matchTemplate(main_gray, resized, cv2.TM_CCOEFF_NORMED)
             _, max_val, _, _ = cv2.minMaxLoc(result)
             if max_val >= sim:
-                self._find_cache[img_name] = {'x': None, 'y': None, 'w': tw, 'h': th,
-                                              'validated': True, 'miss': 0}
-                seed_count += 1
-        return seed_count
+                success += 1
+                total_score += max_val
+                if record:
+                    self._find_cache[img_name] = {'x': None, 'y': None, 'w': tw, 'h': th,
+                                                  'validated': True, 'miss': 0}
+        return success, total, total_score
+
+    def _sample_images(self, images, limit=5):
+        """
+        跨基准分辨率分组均匀采样：保证每个基准组都有代表参与修正因子搜索，
+        避免旧实现只在一批同基准的图上验证、漏掉其它基准。大图优先（小图匹配噪声大）。
+        :return: 采样出的模板名列表（长度 ≤ limit）
+        """
+        base_w, base_h = self.DEFAULT_BASE_RESOLUTION
+        buckets = {}
+        for img_name in images:
+            temp = self.cached_templates.get(img_name)
+            if not temp or temp['w'] < 20 or temp['h'] < 20:
+                continue
+            key = (temp.get('screen_width') or base_w, temp.get('screen_height') or base_h)
+            buckets.setdefault(key, []).append((temp['w'] * temp['h'], img_name))
+        for key in buckets:
+            buckets[key].sort(reverse=True)  # 面积大的优先
+
+        picked = []
+        idx = 0
+        while len(picked) < limit:
+            added = False
+            for key, items in buckets.items():
+                if idx < len(items) and len(picked) < limit:
+                    picked.append(items[idx][1])
+                    added = True
+            if not added:
+                break
+            idx += 1
+        return picked
 
     def _match_single_task(self, main_gray, img_name, sim, offset_x=0, offset_y=0, priority_corner='tl', pool=None, hint=None):
         '''
@@ -1029,9 +1149,6 @@ class ADB():
         temp_info = self.cached_templates.get(img_name)
         if not temp_info:
             return None
-        if self.current_scale is None:
-            raise TaskStoppedException("未锁定分辨率，请先调用'适配分辨率(adapt_res_everytime)'方法进行测算！")
-        
         h_main, w_main = main_gray.shape[:2]
 
         # 移除小图特殊处理，让所有尺寸的图片都参与正常的模板匹配流程
@@ -1039,14 +1156,33 @@ class ADB():
         # if temp_info['w'] < 50 or temp_info['h'] < 50:
         #     ...
 
-        base_scale_x = getattr(self, 'current_scale_x', self.current_scale)
-        base_scale_y = getattr(self, 'current_scale_y', self.current_scale)
+        # 每张模板用自己的缩放比（自身基准分辨率 × 全局修正因子），取不到才回退参考组比例
+        base_scale_x = temp_info.get('scale_x')
+        base_scale_y = temp_info.get('scale_y')
+        if base_scale_x is None or base_scale_y is None:
+            base_scale_x = getattr(self, 'current_scale_x', self.current_scale)
+            base_scale_y = getattr(self, 'current_scale_y', self.current_scale)
+        if base_scale_x is None or base_scale_y is None:
+            raise TaskStoppedException("未锁定分辨率，请先调用'适配分辨率(adapt_res_everytime)'方法进行测算！")
         
         # 计算平均缩放因子
         avg_scale = (base_scale_x + base_scale_y) / 2
 
         native_w = temp_info['w']
         native_h = temp_info['h']
+
+        # 方向判据：按「匹配用的截图分辨率」和「模板图片自身的基准分辨率」的大小关系选匹配方式
+        # （avg_scale = 截图尺寸 / 该模板基准尺寸）
+        #   >= 1：截图分辨率比图片大 → 阶段2：把模板缩放到实际尺寸，在原始截图上整屏匹配；
+        #   <  1：截图分辨率比图片小 → 阶段3：把截图放大到基准分辨率，用原始模板整屏匹配。
+        upscale_template = avg_scale >= 1.0
+
+        # 目标在当前截图中的实测尺寸：优先取验证/命中记录（预加载阶段写入），没有才按名义缩放比推算
+        if hint is not None and hint.get('w') and hint.get('h'):
+            tw_measure, th_measure = int(hint['w']), int(hint['h'])
+        else:
+            tw_measure = int(round(native_w * base_scale_x))
+            th_measure = int(round(native_h * base_scale_y))
 
         # ========== 阶段1：局部邻域优先（连续帧静止 UI：命中时开销只有整屏的百分之几） ==========
         # 复用上一帧命中的位置与实测尺寸，只在上次中心附近的小区域里匹配
@@ -1072,25 +1208,28 @@ class ADB():
                     r = self._calc_click_radius(min_side)
                     return img_name, (cx, cy, r, tw, th, float(score))
 
-        # ========== 阶段2：已核验缩放比例的模板 → 整屏单次精确匹配 ==========
-        # validated=True 表示该尺寸曾在真实画面里以 ≥sim 验证通过（预加载阶段记录，或上一帧命中）。
-        # 把模板缩放到实测尺寸后整屏搜一次即可命中；未命中可直接认为当前不存在，
-        # 不必再走“原始尺寸 + ±5% 网格”那套较重兜底——这是预加载记录分辨率提速的关键。
-        if hint is not None and hint.get('validated'):
-            tw = int(hint.get('w') or native_w)
-            th = int(hint.get('h') or native_h)
-            hit = self._match_scaled_full(main_gray, temp_info['img'], tw, th, sim,
+        # ========== 阶段2：截图分辨率 >= 模板基准分辨率 → 把模板缩放到实际尺寸后整屏匹配 ==========
+        # 截图比模板图大时，目标在截图里更清晰：放大模板（INTER_CUBIC）后再整屏匹配，
+        # 比“把截图缩小到基准分辨率”保留更多细节，实测相似度也更高（0.998+ vs 0.975）。
+        if upscale_template:
+            hit = self._match_scaled_full(main_gray, temp_info['img'], tw_measure, th_measure, sim,
                                           offset_x, offset_y, priority_corner)
             if hit is not None:
                 cx, cy, score = hit
                 if self.mode == "more":
-                    self.log(f"找图成功(实测尺寸整屏): {img_name} (匹配度:{score:.4f}, 尺寸:{tw}x{th})", 'debug')
-                min_side = min(tw, th)
+                    self.log(f"找图成功(阶段2·模板适配尺寸整屏): {img_name} "
+                             f"(匹配度:{score:.4f}, 尺寸:{tw_measure}x{th_measure})", 'debug')
+                min_side = min(tw_measure, th_measure)
                 r = self._calc_click_radius(min_side)
-                return img_name, (cx, cy, r, tw, th, float(score))
-            return None
+                return img_name, (cx, cy, r, tw_measure, th_measure, float(score))
+            # 该尺寸已在预加载/上一帧以 ≥sim 验证通过 → 当前帧确实没有该目标，
+            # 不必再走“原始尺寸 + ±5% 网格”那套较重兜底（这是记录分辨率提速的关键）
+            if hint is not None and hint.get('validated'):
+                return None
 
-        # ========== 阶段3：原始方法（未核验过/无缓存的模板，行为与旧逻辑一致） ==========
+        # ========== 阶段3：截图分辨率 < 模板基准分辨率 的主路径（scale >= 1 时仅作抗比例偏差的兜底） ==========
+        # 3a) 目标可能与模板同像素（不随分辨率缩放的固定像素 UI）→ 用原始模板尺寸直接搜一次；
+        # 3b) pool：把整屏截图缩放到各自基准分辨率，再用原始模板匹配；scale < 1 时这一步即“放大截图”。
 
         # ========== 优化策略：先尝试原始尺寸直接匹配 ==========
         # 直接用原始模板尺寸在大图中搜索，避免缩放带来的撕裂和精度损失
@@ -1208,6 +1347,22 @@ class ADB():
                 scale_x, scale_y
             )
 
+        # ========== 阶段3 兜底：scale < 1 时的保险（主路径是上面把截图放大到基准分辨率） ==========
+        # 该路径依赖 pool；分辨率刚变化、pool 未构建等情况下会比主路径少一次尝试，
+        # 这里退回“把模板缩放到实际尺寸后再匹配”补一次，避免整条链路一次都没试就漏检。
+        # （主路径仍是阶段3：只有它没命中时才会走到这里）
+        if not upscale_template:
+            hit = self._match_scaled_full(main_gray, temp_info['img'], tw_measure, th_measure, sim,
+                                          offset_x, offset_y, priority_corner)
+            if hit is not None:
+                cx, cy, score = hit
+                if self.mode == "more":
+                    self.log(f"找图成功(阶段3兜底·模板适配尺寸整屏): {img_name} "
+                             f"(匹配度:{score:.4f}, 尺寸:{tw_measure}x{th_measure})", 'debug')
+                min_side = min(tw_measure, th_measure)
+                r = self._calc_click_radius(min_side)
+                return img_name, (cx, cy, r, tw_measure, th_measure, float(score))
+
         if self.mode == "more":
             self.log(f"找图失败: {img_name} (原始尺寸匹配度:{direct_max_val:.4f}, 缩放匹配度:{best_match_val:.4f})", 'warning')
         return None
@@ -1301,9 +1456,15 @@ class ADB():
 
     def _adapt_resolution(self, sim=0.90, target_image=None):
         '''
-        测算分辨率缩放比，支持分离的 scale_x 和 scale_y 以处理非均匀拉伸（如小窗模式）。
+        测算分辨率缩放比。与旧实现的关键区别：
+          1. 每张模板按“自身文件名里的基准分辨率”独立换算缩放比（不再全库共用第一张的比例），
+             混用不同基准分辨率的模板库也能各自正确匹配；
+          2. 实测微调以“全局修正因子”的形式叠加到所有模板——设备渲染相对等比缩放的偏差
+             是无量纲的比例量，所以在采样集上搜一次即可，不必每张图各搜一遍；
+          3. 验证与“实测尺寸记录”合并为一次遍历，不再把同一批整屏匹配算两遍；
+          4. 修正因子搜索改为跨分组采样（≤5 张），最坏情况匹配次数从约 11N 降到约 N+8S。
         :param sim: 匹配阈值，默认 0.90
-        :param target_image: 指定图片，若为 None 则轮询库中所有图。
+        :param target_image: 指定图片，若为 None 则验证库中所有图。
         '''
         if not self.cached_templates:
             raise TaskStoppedException("缓存的模板库为空，请先调用'图片预加载'方法加载！")
@@ -1311,197 +1472,127 @@ class ADB():
         main_img = self.获取截图()
         main_gray = cv2.cvtColor(main_img, cv2.COLOR_BGR2GRAY)
         h_main, w_main = main_gray.shape[:2]
-
         screenshot_w, screenshot_h = w_main, h_main
-        
+
         if self.mode == "more":
             self.log(f"截图分辨率: {screenshot_w}x{screenshot_h}", 'debug')
 
-        template_base_w, template_base_h = 1920, 1080
-        
-        # 尝试从模板文件名中提取基准分辨率
-        for img_name in list(self.cached_templates.keys()):
-            temp = self.cached_templates.get(img_name)
-            if temp and temp.get('screen_width') and temp.get('screen_height'):
-                template_base_w = temp['screen_width']
-                template_base_h = temp['screen_height']
-                if self.mode == "more":
-                    self.log(f"从模板文件名提取基准分辨率: {template_base_w}x{template_base_h}", 'debug')
-                break
-
-        scale_x = screenshot_w / template_base_w
-        scale_y = screenshot_h / template_base_h
-        
-        self.current_scale_x = scale_x
-        self.current_scale_y = scale_y
-        self.current_scale = (scale_x + scale_y) / 2
-        
-        if self.mode == "more":
-            self.log(f"默认缩放比: scale_x={scale_x:.4f}, scale_y={scale_y:.4f}, 统一比例={self.current_scale:.4f}", 'debug')
+        # 1) 每张模板按自身基准分辨率算名义缩放比（修正因子先按 1.0 代入）
+        self._compute_template_scales(screenshot_w, screenshot_h)
 
         test_images = [target_image] if target_image else list(self.cached_templates.keys())
-        
-        success_count = 0
-        total_score = 0.0
-        for img_name in test_images:
-            temp = self.cached_templates.get(img_name)
-            if not temp:
-                continue
-            
-            # 降低最小尺寸限制，允许小图参与分辨率适配测试
-            if temp['w'] < 20 or temp['h'] < 20:
-                continue
-            
-            tw = int(temp['w'] * scale_x)
-            th = int(temp['h'] * scale_y)
-            if tw > w_main or th > h_main or tw < 10 or th < 10:
-                continue
-            
-            resized = cv2.resize(temp['img'], (tw, th), 
-                                interpolation=cv2.INTER_AREA if scale_x < 1.0 and scale_y < 1.0 else cv2.INTER_CUBIC)
-            result = cv2.matchTemplate(main_gray, resized, cv2.TM_CCOEFF_NORMED)
-            _, max_val, _, _ = cv2.minMaxLoc(result)
-            
-            if max_val >= sim:
-                success_count += 1
-                total_score += max_val
 
-        if success_count >= len(test_images) * 0.5:
+        # 2) 名义比例验证 + 全量记录实测尺寸（一次遍历同时完成两件事）
+        success_count, total_count, total_score = self._verify_templates(
+            sim, test_images, main_gray, w_main, h_main, record=True)
+        if total_count == 0:
+            if self.mode == "more":
+                self.log("没有可用于适配验证的模板（尺寸过小或全部超出画面）", 'warning')
+            self._scale_correction = (1.0, 1.0)
+            return True
+
+        if success_count >= total_count * 0.5:
             avg_score = total_score / success_count if success_count > 0 else 0
             if self.mode == "more":
-                self.log(f"默认比例验证通过: {success_count}/{len(test_images)} 张匹配成功, 平均相似度={avg_score:.4f}", 'debug')
-            # 记录本帧实测可匹配的模板尺寸（预加载阶段的“经验分辨率”，供找图阶段提速）
-            verified = self._record_verified_sizes(sim, test_images, main_gray, w_main, h_main)
-            if self.mode == "more":
-                self.log(f"已记录 {verified} 张模板的实测缩放尺寸", 'debug')
+                self.log(f"名义比例验证通过: {success_count}/{total_count} 张匹配成功, "
+                         f"平均相似度={avg_score:.4f}", 'debug')
+            self._scale_correction = (1.0, 1.0)
             return True
 
         if self.mode == "more":
-            self.log(f"默认比例验证失败，进行优化搜索...", 'debug')
-        
-        # 使用一维搜索代替二维搜索，提升速度
-        search_range = np.arange(-0.05, 0.051, 0.03)  # 步长从 0.02 增加到 0.03
-        best_scale_x = scale_x
-        best_scale_y = scale_y
-        best_success = success_count
-        best_score = total_score
+            self.log("名义比例验证失败，搜索全局修正因子...", 'debug')
 
-        # 先搜索 x 方向（保持宽高比一致）
-        for dx in search_range:
-            check_stop(self)
-            sx = scale_x + dx
-            if sx <= 0.2 or sx >= 1.5:
-                continue
-            
-            current_success = 0
-            current_score = 0.0
-            
-            for img_name in test_images:
+        # 3) 跨分组采样，搜索全局修正因子
+        sample = self._sample_images(test_images, limit=5)
+        if not sample:
+            sample = test_images[:5]
+
+        def _eval(cx, cy):
+            """在采样集上评估一组修正因子，返回 (成功张数, 累计相似度)"""
+            s = 0
+            sc = 0.0
+            for img_name in sample:
                 temp = self.cached_templates.get(img_name)
                 if not temp:
                     continue
-                
-                # 降低最小尺寸限制，允许小图参与分辨率适配测试
-                if temp['w'] < 20 or temp['h'] < 20:
-                    continue
-                
-                tw = int(temp['w'] * sx)
-                th = int(temp['h'] * sx)  # 保持宽高比一致
+                tw = int(temp['w'] * (temp['scale_nominal_x'] or 1.0) * cx)
+                th = int(temp['h'] * (temp['scale_nominal_y'] or 1.0) * cy)
                 if tw > w_main or th > h_main or tw < 10 or th < 10:
                     continue
-                
-                # 尝试从金字塔获取
-                py_temp = self._get_pyramid_template(img_name, sx, sx)
-                if py_temp is not None:
-                    resized = py_temp['img']
-                else:
-                    resized = cv2.resize(temp['img'], (tw, th), 
-                                        interpolation=cv2.INTER_AREA if sx < 1.0 else cv2.INTER_CUBIC)
+                resized = self._resize_to_target(temp['img'], tw, th)
                 result = cv2.matchTemplate(main_gray, resized, cv2.TM_CCOEFF_NORMED)
                 _, max_val, _, _ = cv2.minMaxLoc(result)
-                
                 if max_val >= sim:
-                    current_success += 1
-                    current_score += max_val
-            
+                    s += 1
+                    sc += max_val
+            return s, sc
+
+        # 与旧网格同量级但覆盖更宽：±15%，步长 5%（旧为 ±5%、步长 3%）
+        search_range = np.arange(-0.15, 0.151, 0.05)
+        best_cx, best_cy = 1.0, 1.0
+        best_success, best_score = _eval(1.0, 1.0)
+
+        # 先搜等比修正（宽高同倍率，对应“整体缩放比估偏”）
+        for dx in search_range:
+            check_stop(self)
+            cx = 1.0 + dx
+            if cx <= 0.5 or cx >= 1.5:
+                continue
+            current_success, current_score = _eval(cx, cx)
             if current_success > best_success or \
                (current_success == best_success and current_score > best_score):
-                best_success = current_success
-                best_score = current_score
-                best_scale_x = sx
-                best_scale_y = sx
+                best_success, best_score = current_success, current_score
+                best_cx, best_cy = cx, cx
 
-        # 如果 x 方向没找到更好的，再搜索 y 方向
-        if best_success == success_count:
+        # 等比没找到更好的，再单独搜 y 方向（对应非均匀拉伸，如小窗模式）
+        if best_cx == 1.0:
             for dy in search_range:
                 check_stop(self)
-                sy = scale_y + dy
-                if sy <= 0.2 or sy >= 1.5:
+                cy = 1.0 + dy
+                if cy <= 0.5 or cy >= 1.5:
                     continue
-                
-                current_success = 0
-                current_score = 0.0
-                
-                for img_name in test_images:
-                    temp = self.cached_templates.get(img_name)
-                    if not temp:
-                        continue
-                    
-                    # 降低最小尺寸限制，允许小图参与分辨率适配测试
-                    if temp['w'] < 20 or temp['h'] < 20:
-                        continue
-                    
-                    tw = int(temp['w'] * scale_x)
-                    th = int(temp['h'] * sy)
-                    if tw > w_main or th > h_main or tw < 10 or th < 10:
-                        continue
-                    
-                    resized = cv2.resize(temp['img'], (tw, th), 
-                                        interpolation=cv2.INTER_AREA if sy < 1.0 else cv2.INTER_CUBIC)
-                    result = cv2.matchTemplate(main_gray, resized, cv2.TM_CCOEFF_NORMED)
-                    _, max_val, _, _ = cv2.minMaxLoc(result)
-                    
-                    if max_val >= sim:
-                        current_success += 1
-                        current_score += max_val
-                
+                current_success, current_score = _eval(1.0, cy)
                 if current_success > best_success or \
                    (current_success == best_success and current_score > best_score):
-                    best_success = current_success
-                    best_score = current_score
-                    best_scale_y = sy
+                    best_success, best_score = current_success, current_score
+                    best_cy = cy
 
-        self.current_scale_x = best_scale_x
-        self.current_scale_y = best_scale_y
-        self.current_scale = (best_scale_x + best_scale_y) / 2
+        self._scale_correction = (best_cx, best_cy)
 
-        # 记录本帧实测可匹配的模板尺寸（预加载阶段的“经验分辨率”，供找图阶段提速）
-        verified = self._record_verified_sizes(sim, test_images, main_gray, w_main, h_main)
+        # 4) 应用修正因子重算每张模板的缩放比，并重新记录实测尺寸
+        self._compute_template_scales(screenshot_w, screenshot_h, best_cx, best_cy)
+        success_count, total_count, total_score = self._verify_templates(
+            sim, test_images, main_gray, w_main, h_main,
+            correction_x=best_cx, correction_y=best_cy, record=True)
+
         if self.mode == "more":
-            self.log(f"已记录 {verified} 张模板的实测缩放尺寸", 'debug')
-
-        avg_score = best_score / best_success if best_success > 0 else 0
-        if self.mode == "more":
-            self.log(f"优化完成: scale_x={best_scale_x:.4f}, scale_y={best_scale_y:.4f}, 统一比例={self.current_scale:.4f}, "
-                     f"{best_success}/{len(test_images)} 张匹配成功, 平均相似度={avg_score:.4f}", 'debug')
-        
+            avg_score = total_score / success_count if success_count else 0
+            self.log(f"修正完成: correction=({best_cx:.2f},{best_cy:.2f}), "
+                     f"{success_count}/{total_count} 张匹配成功, 平均相似度={avg_score:.4f}", 'debug')
         return True
 
-    def 找图(self, sim=0.90, priority_corner='tl', x1: int|float=-1, y1: int|float=-1, x2: int|float=-1, y2: int|float=-1) -> dict[str, tuple]:
+    def 找图(self, sim=0.90, priority_corner='tl', x1: float=0, y1: float=0, x2: float=1.0, y2: float=1.0) -> dict[str, tuple]:
         '''
         :param sim: 匹配阈值，默认 0.90
         :param priority_corner: 角优先度，可选 'tl', 'tr', 'bl', 'br'，默认左上角tl
-        :param x1, y1, x2, y2: 截图区域坐标，默认为 -1 表示全屏
+        :param x1, y1, x2, y2: 截图区域坐标，默认为全屏，范围 0~1.0
         返回值字典： {图名: (匹配坐标x, 匹配坐标y, 推荐点击半径r, 模板宽度, 模板高度, 匹配度)}
         '''
         check_timeout(self.device_id)
 
         if not self.cached_templates:
             raise TaskStoppedException("没有可用的模板图片，请先调用'图片预加载'方法加载图片！")
-            
+
+        # -1 / 像素值等越界写法统一成比例边界，避免算出天文数字的坐标偏移
+        x1, y1, x2, y2 = self._归一化区域(x1, y1, x2, y2)
+        # 区域无效时（如 x1 >= x2）获取截图会退化成整屏，偏移量必须同步归零，
+        # 否则裁剪用的是全屏、坐标却按无效区域偏移，两者不一致导致返回坐标错位
+        if x2 <= x1 or y2 <= y1:
+            x1, y1, x2, y2 = 0.0, 0.0, 1.0, 1.0
+
         # 计算偏移量（局部截图相对于全屏的坐标偏移）
-        offset_x = int(self.width * x1) if isinstance(x1, float) and x1 != -1 else (int(x1) if x1 != -1 else 0)
-        offset_y = int(self.height * y1) if isinstance(y1, float) and y1 != -1 else (int(y1) if y1 != -1 else 0)
+        offset_x = int(self.width * x1)
+        offset_y = int(self.height * y1)
             
         # 已有分辨率，多线程并发极速找所有图
         output = {}
@@ -1513,17 +1604,39 @@ class ADB():
         # 复用 init 里的线程池，避免 while 循环高频创建线程导致内存泄漏和 CPU 暴涨
         base_scale_x = getattr(self, 'current_scale_x', self.current_scale)
         base_scale_y = getattr(self, 'current_scale_y', self.current_scale)
-        # 缩放候选池：同帧所有模板共用同一批缩放截图，只在真正需要时按需缩放一次并缓存。
-        # 缩放比缺失（分辨率刚变化、尚未重新适配）时传 None，交由匹配线程抛原有的异常提示
-        if base_scale_x is not None and base_scale_y is not None:
-            pool = _ScaledMainPool(main_gray, base_scale_x, base_scale_y)
-        else:
-            pool = None
+        # 缩放候选池按“基准分辨率分组”构建：同组模板共用一批缩放截图（通常只有一组，开销与旧实现相同）；
+        # 混用不同基准分辨率的模板库会各自成组、互不干扰，彻底消除“第一张决定全库比例”的隐患。
+        # 坐标映射用组内比例，因此与旧实现逐模板计算的结果一致。
+        default_base = self.DEFAULT_BASE_RESOLUTION
+
+        def _base_key(name):
+            temp = self.cached_templates.get(name)
+            if not temp:
+                return default_base
+            return (temp.get('screen_width') or default_base[0],
+                    temp.get('screen_height') or default_base[1])
+
+        pools = {}
+        for name in img_names:
+            key = _base_key(name)
+            if key in pools:
+                continue
+            temp = self.cached_templates.get(name) or {}
+            sx = temp.get('scale_x') or base_scale_x
+            sy = temp.get('scale_y') or base_scale_y
+            # 缩放比缺失（分辨率刚变化、尚未重新适配）时该组池为 None，交由匹配线程抛原有异常提示
+            if sx is not None and sy is not None:
+                pools[key] = _ScaledMainPool(main_gray, sx, sy)
+
         # 命中缓存快照：交给匹配线程做“局部优先”，只读不改（写回在主线程统一做）
         hints = {name: self._find_cache.get(name) for name in img_names}
-        results = list(self.executor.map(
-            lambda name: self._match_single_task(main_gray, name, sim, offset_x, offset_y, priority_corner, pool, hints.get(name)),
-            img_names))
+
+        def _task(name):
+            return self._match_single_task(main_gray, name, sim, offset_x, offset_y,
+                                           priority_corner, pools.get(_base_key(name)),
+                                           hints.get(name))
+
+        results = list(self.executor.map(_task, img_names))
 
         for result in results:
             if result:
@@ -1548,15 +1661,20 @@ class ADB():
             print(f"[DEBUG] [{self.device_id}_找图] 未匹配到任何图片")
         return output
     
-    def 找字(self, x1: int|float = -1, y1: int|float = -1, x2: int|float = -1, y2: int|float = -1, Specified_image=None, target_txt: str = '', use_regex: bool = False):
+    def 找字(self, x1: float = 0, y1: float = 0, x2: float = 1.0, y2: float = 1.0, Specified_image=None, target_txt: str = '', use_regex: bool = False):
         '''
-        x1, y1, x2, y2: 截图区域坐标，默认为 -1 表示全屏
+        x1, y1, x2, y2: 截图区域坐标，默认为全屏， 范围 0~1.0
         Specified_image: 指定图片（如果不提供则使用当前截图）
         target_txt: 目标文本（如果不提供则返回所有文本框信息），支持正则表达式，返回值为匹配到的文本对应坐标或None
         use_regex: 是否启用正则匹配，默认为 False
         '''
         check_timeout(self.device_id)
-        
+
+        x1, y1, x2, y2 = self._归一化区域(x1, y1, x2, y2)
+        # 区域无效时 获取截图 会退化成整屏，偏移量必须同步归零（理由同 找图）
+        if x2 <= x1 or y2 <= y1:
+            x1, y1, x2, y2 = 0.0, 0.0, 1.0, 1.0
+
         if Specified_image:
             if isinstance(Specified_image, bytes):
                 img_array = np.frombuffer(Specified_image, np.uint8)
@@ -1576,9 +1694,9 @@ class ADB():
             self.log("找字：未识别到任何文本！", 'debug')
             return None
 
-        # 如果是全屏模式（-1 或 None），偏移量就是 0；如果是裁剪区域，偏移量就是左上角起点
-        offset_x = int(self.width * x1) if (isinstance(x1, float) and x1 != -1) else (int(x1) if x1 != -1 else 0)
-        offset_y = int(self.height * y1) if (isinstance(y1, float) and y1 != -1) else (int(y1) if y1 != -1 else 0)
+        # 如果是全屏模式（1.0），偏移量就是 0；如果是裁剪区域，偏移量就是左上角起点
+        offset_x = int(self.width * x1)
+        offset_y = int(self.height * y1)
 
         result_dict = {}
         try:
